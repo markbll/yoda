@@ -51,8 +51,11 @@ A file is relayed only when all of the following hold:
   used by many downloaders/transfer tools).
 - It's a `.zip`/`.7z` file, or a numbered split-archive part (`...001`,
   `...002`, etc.).
-- It's currently stable (not open for writing by another process) - unstable
-  files are simply left in place and picked up on a later scan.
+- It's confirmed settled: the file must be unlocked *and* its size must
+  stay unchanged across a full 10-second confirmation window, not just
+  at a single instant - a file that is momentarily unlocked mid-transfer
+  won't be picked up prematurely. Files that don't pass are simply left in
+  place and re-checked on a later scan.
 
 Split-archive parts are relayed individually as each one stabilizes rather
 than waiting for the whole set - Yoda's own Inbound watcher already handles

@@ -614,6 +614,32 @@ $StagerScriptBlock = {
         } catch { return $false }
     }
 
+    function Get-StagerFileSize {
+        param([string]$FilePath)
+        try { return (Get-Item -Path $FilePath -ErrorAction Stop).Length } catch { return -1 }
+    }
+
+    # Before moving a file, confirm the write has actually finished: the file
+    # must be unlocked and its size must not change across a full
+    # confirmation window (fixed at 10 seconds), not just at a single instant.
+    function Wait-StagerFileSettled {
+        param([string]$FilePath, [int]$ConfirmSeconds = 10)
+
+        if (-not (Test-StagerFileStability -FilePath $FilePath)) { return $false }
+        $sizeBefore = Get-StagerFileSize -FilePath $FilePath
+
+        for ($i = 0; $i -lt $ConfirmSeconds; $i++) {
+            if ($Sync.StopRequested) { return $false }
+            Start-Sleep -Seconds 1
+        }
+
+        if (-not (Test-Path $FilePath)) { return $false }
+        if (-not (Test-StagerFileStability -FilePath $FilePath)) { return $false }
+        $sizeAfter = Get-StagerFileSize -FilePath $FilePath
+
+        return ($sizeAfter -ge 0 -and $sizeAfter -eq $sizeBefore)
+    }
+
     function Test-QualifiesForStaging {
         param([System.IO.FileInfo]$File)
         if ($File.Name.StartsWith('.')) { return $false }
@@ -645,7 +671,8 @@ $StagerScriptBlock = {
             foreach ($File in $Candidates) {
                 if ($Sync.StopRequested) { break }
                 try {
-                    if (-not (Test-StagerFileStability -FilePath $File.FullName)) {
+                    if (-not (Wait-StagerFileSettled -FilePath $File.FullName -ConfirmSeconds 10)) {
+                        Write-StagerLog "Write not yet confirmed complete, will recheck: $($File.Name)" -Type "Info"
                         continue
                     }
 

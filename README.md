@@ -42,6 +42,8 @@ watching a console window, you get:
 
 ### Run it
 
+Double-click **`Start_Yoda_GUI.bat`**, or run directly:
+
 ```powershell
 powershell.exe -ExecutionPolicy Bypass -File Yoda_GUI.ps1
 ```

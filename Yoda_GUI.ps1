@@ -36,12 +36,14 @@ $ConfigFile = Join-Path -Path $PSScriptRoot -ChildPath "yoda_gui_config.json"
 
 function Get-DefaultConfig {
     [PSCustomObject]@{
-        BasePath                 = "C:\unzipper"
+        BasePath                  = "C:\unzipper"
+        PreStagePath              = ""
         InboundPath               = "C:\unzipper\inbound"
         ExtractedPath             = "C:\unzipper\extracted"
         SevenZipPath              = "C:\Program Files\7-Zip\7z.exe"
         CheckIntervalSeconds      = 30
         EmptyCyclesBeforeRestart  = 10
+        StagerScanIntervalSeconds = 15
         EnableStarWarsTheme       = $true
         EnableYodaArt             = $true
         EnableYodaQuotes          = $true
@@ -84,11 +86,17 @@ $Sync = [hashtable]::Synchronized(@{
     Failed        = 0
     Errors        = 0
     Countdown     = ""
+    StagerState   = "Idle"
+    Staged        = 0
 })
 
 $script:EnginePS        = $null
 $script:EngineRunspace  = $null
 $script:EngineAsync     = $null
+
+$script:StagerPS        = $null
+$script:StagerRunspace  = $null
+$script:StagerAsync     = $null
 
 # ------------------------------------------------------------------------
 # Background engine - adapted from Yoda_Unzipper.ps1
@@ -565,13 +573,117 @@ $EngineScriptBlock = {
 }
 
 # ------------------------------------------------------------------------
+# Pre-stage watcher (background thread)
+#
+# Watches a separate "pre-stage" drop folder (e.g. where some other process
+# - a downloader, an FTP/SFTP drop, a torrent client - lands files) and
+# relays qualifying files into the Inbound folder that the main engine
+# above actually watches. A file qualifies only if:
+#   - its name does not start with "." (hidden/partial marker files)
+#   - its extension is not ".tmp" (the common "still writing" marker)
+#   - it is a .7z/.zip file, or a numbered split-archive part (....001, etc.)
+#   - it is stable (not currently open for writing by another process)
+#
+# Split-archive parts are relayed one at a time as each one stabilizes;
+# the main engine already tolerates parts trickling in over time.
+# ------------------------------------------------------------------------
+
+$StagerScriptBlock = {
+    param(
+        [string]$PreStagePath,
+        [string]$InboundPath,
+        [int]$ScanIntervalSeconds,
+        $Sync
+    )
+
+    function Write-StagerLog {
+        param([string]$Message, [ValidateSet("Info", "Success", "Warning", "Error")][string]$Type = "Info")
+        $Timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+        $Sync.LogQueue.Enqueue([PSCustomObject]@{ Type = $Type; Message = "[$Timestamp] [PreStage] [$Type] $Message" })
+    }
+
+    function Test-StagerFileStability {
+        param([string]$FilePath)
+        try {
+            $null = Get-Item -Path $FilePath -ErrorAction Stop
+            try {
+                $Stream = [System.IO.File]::Open($FilePath, 'Open', 'Read', 'None')
+                $Stream.Close()
+                return $true
+            } catch { return $false }
+        } catch { return $false }
+    }
+
+    function Test-QualifiesForStaging {
+        param([System.IO.FileInfo]$File)
+        if ($File.Name.StartsWith('.')) { return $false }
+        if ($File.Extension -ieq '.tmp') { return $false }
+        if ($File.Extension -imatch '^\.(7z|zip)$') { return $true }
+        if ($File.Name -match '\.\d{3}$') { return $true }
+        return $false
+    }
+
+    foreach ($Dir in @($PreStagePath, $InboundPath)) {
+        try {
+            if (-not (Test-Path $Dir)) {
+                New-Item -ItemType Directory -Path $Dir -Force | Out-Null
+                Write-StagerLog "Created directory: $Dir" -Type "Info"
+            }
+        } catch {
+            Write-StagerLog "Failed to create $Dir : $_" -Type "Error"
+        }
+    }
+
+    Write-StagerLog "Pre-stage watcher started. Watching: $PreStagePath -> $InboundPath" -Type "Info"
+    $Sync.StagerState = "Running"
+
+    while (-not $Sync.StopRequested) {
+        try {
+            $Candidates = @(Get-ChildItem -Path $PreStagePath -File -ErrorAction SilentlyContinue |
+                            Where-Object { Test-QualifiesForStaging $_ })
+
+            foreach ($File in $Candidates) {
+                if ($Sync.StopRequested) { break }
+                try {
+                    if (-not (Test-StagerFileStability -FilePath $File.FullName)) {
+                        continue
+                    }
+
+                    $Destination = Join-Path -Path $InboundPath -ChildPath $File.Name
+                    if (Test-Path $Destination) {
+                        Write-StagerLog "Skipping $($File.Name) - a file with that name already exists in Inbound" -Type "Warning"
+                        continue
+                    }
+
+                    Move-Item -Path $File.FullName -Destination $Destination -ErrorAction Stop
+                    $Sync.Staged++
+                    Write-StagerLog "Staged into inbound: $($File.Name)" -Type "Success"
+                } catch {
+                    Write-StagerLog "Failed to stage $($File.Name): $_" -Type "Error"
+                }
+            }
+        } catch {
+            Write-StagerLog "Exception scanning pre-stage folder: $_" -Type "Error"
+        }
+
+        for ($i = 0; $i -lt $ScanIntervalSeconds; $i++) {
+            if ($Sync.StopRequested) { break }
+            Start-Sleep -Seconds 1
+        }
+    }
+
+    Write-StagerLog "Pre-stage watcher stopped." -Type "Warning"
+    $Sync.StagerState = "Stopped"
+}
+
+# ------------------------------------------------------------------------
 # GUI
 # ------------------------------------------------------------------------
 
 $Form = New-Object System.Windows.Forms.Form
 $Form.Text = "Yoda The Unzipper"
-$Form.Size = New-Object System.Drawing.Size(920, 720)
-$Form.MinimumSize = New-Object System.Drawing.Size(820, 600)
+$Form.Size = New-Object System.Drawing.Size(950, 800)
+$Form.MinimumSize = New-Object System.Drawing.Size(860, 700)
 $Form.StartPosition = "CenterScreen"
 $Form.BackColor = [System.Drawing.Color]::FromArgb(30, 30, 30)
 $Form.ForeColor = [System.Drawing.Color]::White
@@ -609,23 +721,32 @@ function New-FormButton {
 $grpPaths = New-Object System.Windows.Forms.GroupBox
 $grpPaths.Text = "Folders"
 $grpPaths.Location = New-Object System.Drawing.Point(15, 15)
-$grpPaths.Size = New-Object System.Drawing.Size(875, 115)
+$grpPaths.Size = New-Object System.Drawing.Size(900, 165)
 $grpPaths.ForeColor = [System.Drawing.Color]::White
 
 $lblBase = New-FormLabel "Base path:" 15 28 90
-$txtBase = New-FormTextBox 110 25 555 $Config.BasePath
-$btnBrowseBase = New-FormButton "Browse..." 675 24 90
+$txtBase = New-FormTextBox 110 25 580 $Config.BasePath
+$btnBrowseBase = New-FormButton "Browse..." 700 24 90
 
-$lblInbound = New-FormLabel "Inbound:" 15 60 90
-$txtInbound = New-FormTextBox 110 57 555 $Config.InboundPath
-$btnBrowseInbound = New-FormButton "Browse..." 675 56 90
+$lblPreStage = New-FormLabel "Pre-stage:" 15 60 90
+$txtPreStage = New-FormTextBox 110 57 580 $Config.PreStagePath
+$btnBrowsePreStage = New-FormButton "Browse..." 700 56 90
 
-$lblExtracted = New-FormLabel "Extracted:" 15 92 90
-$txtExtracted = New-FormTextBox 110 89 555 $Config.ExtractedPath
-$btnBrowseExtracted = New-FormButton "Browse..." 675 88 90
+$lblInbound = New-FormLabel "Inbound:" 15 92 90
+$txtInbound = New-FormTextBox 110 89 580 $Config.InboundPath
+$btnBrowseInbound = New-FormButton "Browse..." 700 88 90
+
+$lblExtracted = New-FormLabel "Extracted:" 15 124 90
+$txtExtracted = New-FormTextBox 110 121 580 $Config.ExtractedPath
+$btnBrowseExtracted = New-FormButton "Browse..." 700 120 90
+
+$toolTip = New-Object System.Windows.Forms.ToolTip
+$toolTip.SetToolTip($txtPreStage, "Optional. Files dropped here by another process (downloader, FTP, etc.) are moved into Inbound once they are fully written. Leave blank to disable.")
+$toolTip.SetToolTip($lblPreStage, "Optional. Files dropped here by another process (downloader, FTP, etc.) are moved into Inbound once they are fully written. Leave blank to disable.")
 
 $grpPaths.Controls.AddRange(@(
     $lblBase, $txtBase, $btnBrowseBase,
+    $lblPreStage, $txtPreStage, $btnBrowsePreStage,
     $lblInbound, $txtInbound, $btnBrowseInbound,
     $lblExtracted, $txtExtracted, $btnBrowseExtracted
 ))
@@ -633,13 +754,13 @@ $grpPaths.Controls.AddRange(@(
 # --- Engine settings group ---
 $grpEngine = New-Object System.Windows.Forms.GroupBox
 $grpEngine.Text = "Engine Settings"
-$grpEngine.Location = New-Object System.Drawing.Point(15, 140)
-$grpEngine.Size = New-Object System.Drawing.Size(875, 140)
+$grpEngine.Location = New-Object System.Drawing.Point(15, 190)
+$grpEngine.Size = New-Object System.Drawing.Size(900, 140)
 $grpEngine.ForeColor = [System.Drawing.Color]::White
 
 $lbl7z = New-FormLabel "7-Zip exe:" 15 28 90
-$txt7z = New-FormTextBox 110 25 555 $Config.SevenZipPath
-$btnBrowse7z = New-FormButton "Browse..." 675 24 90
+$txt7z = New-FormTextBox 110 25 580 $Config.SevenZipPath
+$btnBrowse7z = New-FormButton "Browse..." 700 24 90
 
 $lblInterval = New-FormLabel "Check interval (s):" 15 64 130
 $numInterval = New-Object System.Windows.Forms.NumericUpDown
@@ -656,6 +777,14 @@ $numEmptyCycles.Size = New-Object System.Drawing.Size(70, 22)
 $numEmptyCycles.Minimum = 1
 $numEmptyCycles.Maximum = 1000
 $numEmptyCycles.Value = [Math]::Min([Math]::Max([int]$Config.EmptyCyclesBeforeRestart, 1), 1000)
+
+$lblStagerInterval = New-FormLabel "Pre-stage scan (s):" 560 64 160
+$numStagerInterval = New-Object System.Windows.Forms.NumericUpDown
+$numStagerInterval.Location = New-Object System.Drawing.Point(725, 62)
+$numStagerInterval.Size = New-Object System.Drawing.Size(65, 22)
+$numStagerInterval.Minimum = 5
+$numStagerInterval.Maximum = 3600
+$numStagerInterval.Value = [Math]::Min([Math]::Max([int]$Config.StagerScanIntervalSeconds, 5), 3600)
 
 $chkTheme = New-Object System.Windows.Forms.CheckBox
 $chkTheme.Text = "Star Wars intro"
@@ -694,24 +823,25 @@ $chkGreenText.ForeColor = [System.Drawing.Color]::White
 
 $grpEngine.Controls.AddRange(@(
     $lbl7z, $txt7z, $btnBrowse7z,
-    $lblInterval, $numInterval, $lblEmptyCycles, $numEmptyCycles,
+    $lblInterval, $numInterval, $lblEmptyCycles, $numEmptyCycles, $lblStagerInterval, $numStagerInterval,
     $chkTheme, $chkArt, $chkQuotes, $chkBeeps, $chkGreenText
 ))
 
 # --- Action buttons ---
-$btnStart = New-FormButton "Start" 15 290 110 32
+$btnStart = New-FormButton "Start" 15 340 110 32
 $btnStart.BackColor = [System.Drawing.Color]::FromArgb(40, 90, 40)
 $btnStart.ForeColor = [System.Drawing.Color]::White
 
-$btnStop = New-FormButton "Stop" 135 290 110 32
+$btnStop = New-FormButton "Stop" 135 340 110 32
 $btnStop.BackColor = [System.Drawing.Color]::FromArgb(90, 40, 40)
 $btnStop.ForeColor = [System.Drawing.Color]::White
 $btnStop.Enabled = $false
 
-$btnOpenInbound = New-FormButton "Open Inbound" 265 292 120 28
-$btnOpenExtracted = New-FormButton "Open Extracted" 395 292 120 28
-$btnOpenLogs = New-FormButton "Open Logs" 525 292 110 28
-$btnClearLog = New-FormButton "Clear Log View" 645 292 130 28
+$btnOpenPreStage = New-FormButton "Open Pre-Stage" 265 342 130 28
+$btnOpenInbound = New-FormButton "Open Inbound" 405 342 120 28
+$btnOpenExtracted = New-FormButton "Open Extracted" 535 342 120 28
+$btnOpenLogs = New-FormButton "Open Logs" 665 342 100 28
+$btnClearLog = New-FormButton "Clear Log" 775 342 120 28
 
 # --- Status strip ---
 $statusStrip = New-Object System.Windows.Forms.StatusStrip
@@ -727,16 +857,20 @@ $lblFailed = New-Object System.Windows.Forms.ToolStripStatusLabel
 $lblFailed.Text = "Failed: 0"
 $lblErrors = New-Object System.Windows.Forms.ToolStripStatusLabel
 $lblErrors.Text = "Errors: 0"
+$lblStagerState = New-Object System.Windows.Forms.ToolStripStatusLabel
+$lblStagerState.Text = "Stager: Idle"
+$lblStaged = New-Object System.Windows.Forms.ToolStripStatusLabel
+$lblStaged.Text = "Staged: 0"
 $lblCountdown = New-Object System.Windows.Forms.ToolStripStatusLabel
 $lblCountdown.Text = ""
 $lblCountdown.Spring = $true
 $lblCountdown.TextAlign = [System.Drawing.ContentAlignment]::MiddleRight
-$statusStrip.Items.AddRange(@($lblState, $lblCycle, $lblCompleted, $lblWaiting, $lblFailed, $lblErrors, $lblCountdown))
+$statusStrip.Items.AddRange(@($lblState, $lblCycle, $lblCompleted, $lblWaiting, $lblFailed, $lblErrors, $lblStagerState, $lblStaged, $lblCountdown))
 
 # --- Log view ---
 $rtbLog = New-Object System.Windows.Forms.RichTextBox
-$rtbLog.Location = New-Object System.Drawing.Point(15, 335)
-$rtbLog.Size = New-Object System.Drawing.Size(875, 320)
+$rtbLog.Location = New-Object System.Drawing.Point(15, 380)
+$rtbLog.Size = New-Object System.Drawing.Size(900, 300)
 $rtbLog.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right
 $rtbLog.ReadOnly = $true
 $rtbLog.BackColor = [System.Drawing.Color]::Black
@@ -746,7 +880,7 @@ $rtbLog.WordWrap = $true
 
 $Form.Controls.AddRange(@(
     $grpPaths, $grpEngine,
-    $btnStart, $btnStop, $btnOpenInbound, $btnOpenExtracted, $btnOpenLogs, $btnClearLog,
+    $btnStart, $btnStop, $btnOpenPreStage, $btnOpenInbound, $btnOpenExtracted, $btnOpenLogs, $btnClearLog,
     $rtbLog, $statusStrip
 ))
 
@@ -756,12 +890,14 @@ $Form.Controls.AddRange(@(
 
 function Save-CurrentConfig {
     $cfg = [PSCustomObject]@{
-        BasePath                 = $txtBase.Text
+        BasePath                  = $txtBase.Text
+        PreStagePath              = $txtPreStage.Text
         InboundPath               = $txtInbound.Text
         ExtractedPath             = $txtExtracted.Text
         SevenZipPath              = $txt7z.Text
         CheckIntervalSeconds      = [int]$numInterval.Value
         EmptyCyclesBeforeRestart  = [int]$numEmptyCycles.Value
+        StagerScanIntervalSeconds = [int]$numStagerInterval.Value
         EnableStarWarsTheme       = $chkTheme.Checked
         EnableYodaArt             = $chkArt.Checked
         EnableYodaQuotes          = $chkQuotes.Checked
@@ -773,9 +909,9 @@ function Save-CurrentConfig {
 
 function Set-InputsEnabled {
     param([bool]$Enabled)
-    foreach ($ctrl in @($txtBase, $txtInbound, $txtExtracted, $txt7z, $numInterval, $numEmptyCycles,
+    foreach ($ctrl in @($txtBase, $txtPreStage, $txtInbound, $txtExtracted, $txt7z, $numInterval, $numEmptyCycles, $numStagerInterval,
                         $chkTheme, $chkArt, $chkQuotes, $chkBeeps, $chkGreenText,
-                        $btnBrowseBase, $btnBrowseInbound, $btnBrowseExtracted, $btnBrowse7z)) {
+                        $btnBrowseBase, $btnBrowsePreStage, $btnBrowseInbound, $btnBrowseExtracted, $btnBrowse7z)) {
         $ctrl.Enabled = $Enabled
     }
 }
@@ -804,23 +940,44 @@ function Add-LogEntry {
 
 function Stop-Engine {
     param([int]$WaitSeconds = 5)
-    if ($null -eq $script:EnginePS) { return }
+    if ($null -eq $script:EnginePS -and $null -eq $script:StagerPS) { return }
     $Sync.StopRequested = $true
     $deadline = (Get-Date).AddSeconds($WaitSeconds)
-    while ($Sync.State -ne "Stopped" -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 100 }
-    try { [void]$script:EnginePS.Stop() } catch { }
-    try { $script:EnginePS.Dispose() } catch { }
-    try { $script:EngineRunspace.Close() } catch { }
-    try { $script:EngineRunspace.Dispose() } catch { }
-    $script:EnginePS = $null
-    $script:EngineRunspace = $null
-    $script:EngineAsync = $null
+    while ((($null -ne $script:EnginePS -and $Sync.State -ne "Stopped") -or
+            ($null -ne $script:StagerPS -and $Sync.StagerState -ne "Stopped")) -and
+           (Get-Date) -lt $deadline) {
+        Start-Sleep -Milliseconds 100
+    }
+    if ($null -ne $script:EnginePS) {
+        try { [void]$script:EnginePS.Stop() } catch { }
+        try { $script:EnginePS.Dispose() } catch { }
+        try { $script:EngineRunspace.Close() } catch { }
+        try { $script:EngineRunspace.Dispose() } catch { }
+        $script:EnginePS = $null
+        $script:EngineRunspace = $null
+        $script:EngineAsync = $null
+    }
+    if ($null -ne $script:StagerPS) {
+        try { [void]$script:StagerPS.Stop() } catch { }
+        try { $script:StagerPS.Dispose() } catch { }
+        try { $script:StagerRunspace.Close() } catch { }
+        try { $script:StagerRunspace.Dispose() } catch { }
+        $script:StagerPS = $null
+        $script:StagerRunspace = $null
+        $script:StagerAsync = $null
+    }
 }
 
 $btnBrowseBase.Add_Click({
     $dlg = New-Object System.Windows.Forms.FolderBrowserDialog
     if (Test-Path $txtBase.Text) { $dlg.SelectedPath = $txtBase.Text }
     if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { $txtBase.Text = $dlg.SelectedPath }
+})
+
+$btnBrowsePreStage.Add_Click({
+    $dlg = New-Object System.Windows.Forms.FolderBrowserDialog
+    if (Test-Path $txtPreStage.Text) { $dlg.SelectedPath = $txtPreStage.Text }
+    if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { $txtPreStage.Text = $dlg.SelectedPath }
 })
 
 $btnBrowseInbound.Add_Click({
@@ -840,6 +997,16 @@ $btnBrowse7z.Add_Click({
     $dlg.Filter = "7z.exe|7z.exe|Executable files (*.exe)|*.exe|All files (*.*)|*.*"
     if (Test-Path $txt7z.Text) { $dlg.InitialDirectory = Split-Path $txt7z.Text -Parent }
     if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { $txt7z.Text = $dlg.FileName }
+})
+
+$btnOpenPreStage.Add_Click({
+    if ([string]::IsNullOrWhiteSpace($txtPreStage.Text)) {
+        [System.Windows.Forms.MessageBox]::Show("No pre-stage folder is configured.", "Yoda The Unzipper") | Out-Null
+    } elseif (Test-Path $txtPreStage.Text) {
+        Start-Process explorer.exe $txtPreStage.Text
+    } else {
+        [System.Windows.Forms.MessageBox]::Show("Pre-stage folder does not exist yet.", "Yoda The Unzipper") | Out-Null
+    }
 })
 
 $btnOpenInbound.Add_Click({
@@ -864,6 +1031,7 @@ $btnStart.Add_Click({
     if ($null -ne $script:EnginePS) { return }
 
     $basePath = $txtBase.Text.Trim()
+    $preStagePath = $txtPreStage.Text.Trim()
     $inboundPath = $txtInbound.Text.Trim()
     $extractedPath = $txtExtracted.Text.Trim()
     $sevenZip = $txt7z.Text.Trim()
@@ -876,6 +1044,11 @@ $btnStart.Add_Click({
         [System.Windows.Forms.MessageBox]::Show("7-Zip executable not found at:`n$sevenZip", "Yoda The Unzipper") | Out-Null
         return
     }
+    if (-not [string]::IsNullOrWhiteSpace($preStagePath) -and
+        ($preStagePath.TrimEnd('\', '/') -ieq $inboundPath.TrimEnd('\', '/'))) {
+        [System.Windows.Forms.MessageBox]::Show("Pre-stage and Inbound must be different folders.", "Yoda The Unzipper") | Out-Null
+        return
+    }
 
     $Sync.StopRequested = $false
     $Sync.State = "Starting"
@@ -885,6 +1058,8 @@ $btnStart.Add_Click({
     $Sync.Failed = 0
     $Sync.Errors = 0
     $Sync.Countdown = ""
+    $Sync.StagerState = "Idle"
+    $Sync.Staged = 0
     $dummy = $null
     while ($Sync.LogQueue.TryDequeue([ref]$dummy)) { }
 
@@ -908,6 +1083,20 @@ $btnStart.Add_Click({
     })
     $script:EngineAsync = $script:EnginePS.BeginInvoke()
 
+    if (-not [string]::IsNullOrWhiteSpace($preStagePath)) {
+        $script:StagerRunspace = [runspacefactory]::CreateRunspace()
+        $script:StagerRunspace.Open()
+        $script:StagerPS = [powershell]::Create()
+        $script:StagerPS.Runspace = $script:StagerRunspace
+        [void]$script:StagerPS.AddScript($StagerScriptBlock.ToString()).AddParameters(@{
+            PreStagePath        = $preStagePath
+            InboundPath         = $inboundPath
+            ScanIntervalSeconds = [int]$numStagerInterval.Value
+            Sync                = $Sync
+        })
+        $script:StagerAsync = $script:StagerPS.BeginInvoke()
+    }
+
     $btnStart.Enabled = $false
     $btnStop.Enabled = $true
     Set-InputsEnabled -Enabled $false
@@ -915,9 +1104,10 @@ $btnStart.Add_Click({
 })
 
 $btnStop.Add_Click({
-    if ($null -eq $script:EnginePS) { return }
+    if ($null -eq $script:EnginePS -and $null -eq $script:StagerPS) { return }
     $Sync.StopRequested = $true
     $Sync.State = "Stopping"
+    if ($null -ne $script:StagerPS) { $Sync.StagerState = "Stopping" }
     $btnStop.Enabled = $false
 })
 
@@ -938,6 +1128,8 @@ $tmrPoll.Add_Tick({
     $lblWaiting.Text = "Waiting: $($Sync.Waiting)"
     $lblFailed.Text = "Failed: $($Sync.Failed)"
     $lblErrors.Text = "Errors: $($Sync.Errors)"
+    $lblStagerState.Text = "Stager: $($Sync.StagerState)"
+    $lblStaged.Text = "Staged: $($Sync.Staged)"
     $lblCountdown.Text = $Sync.Countdown
 
     if ($Sync.State -eq "Stopped" -and $null -ne $script:EnginePS) {
@@ -948,7 +1140,19 @@ $tmrPoll.Add_Tick({
         $script:EnginePS = $null
         $script:EngineRunspace = $null
         $script:EngineAsync = $null
+    }
 
+    if ($Sync.StagerState -eq "Stopped" -and $null -ne $script:StagerPS) {
+        try { [void]$script:StagerPS.EndInvoke($script:StagerAsync) } catch { }
+        try { $script:StagerPS.Dispose() } catch { }
+        try { $script:StagerRunspace.Close() } catch { }
+        try { $script:StagerRunspace.Dispose() } catch { }
+        $script:StagerPS = $null
+        $script:StagerRunspace = $null
+        $script:StagerAsync = $null
+    }
+
+    if ($null -eq $script:EnginePS -and $null -eq $script:StagerPS -and -not $btnStart.Enabled) {
         $btnStart.Enabled = $true
         $btnStop.Enabled = $false
         Set-InputsEnabled -Enabled $true
@@ -958,7 +1162,7 @@ $tmrPoll.Start()
 
 $Form.Add_FormClosing({
     $tmrPoll.Stop()
-    if ($null -ne $script:EnginePS) {
+    if ($null -ne $script:EnginePS -or $null -ne $script:StagerPS) {
         Stop-Engine -WaitSeconds 5
     }
     Save-CurrentConfig

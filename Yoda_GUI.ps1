@@ -716,6 +716,16 @@ $Form.BackColor = [System.Drawing.Color]::FromArgb(30, 30, 30)
 $Form.ForeColor = [System.Drawing.Color]::White
 $Form.Font = New-Object System.Drawing.Font("Segoe UI", 9)
 
+# Test-Path throws (rather than returning $false) when -Path is an empty
+# string, which happens whenever an optional field (like Pre-Stage) or a
+# cleared textbox is checked. Use this wrapper anywhere a GUI text field's
+# value is passed to Test-Path.
+function Test-PathSafe {
+    param([string]$Path)
+    if ([string]::IsNullOrWhiteSpace($Path)) { return $false }
+    return Test-Path $Path
+}
+
 function New-FormLabel {
     param([string]$Text, [int]$X, [int]$Y, [int]$Width = 110)
     $l = New-Object System.Windows.Forms.Label
@@ -997,39 +1007,39 @@ function Stop-Engine {
 
 $btnBrowseBase.Add_Click({
     $dlg = New-Object System.Windows.Forms.FolderBrowserDialog
-    if (Test-Path $txtBase.Text) { $dlg.SelectedPath = $txtBase.Text }
+    if (Test-PathSafe $txtBase.Text) { $dlg.SelectedPath = $txtBase.Text }
     if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { $txtBase.Text = $dlg.SelectedPath }
 })
 
 $btnBrowsePreStage.Add_Click({
     $dlg = New-Object System.Windows.Forms.FolderBrowserDialog
-    if (Test-Path $txtPreStage.Text) { $dlg.SelectedPath = $txtPreStage.Text }
+    if (Test-PathSafe $txtPreStage.Text) { $dlg.SelectedPath = $txtPreStage.Text }
     if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { $txtPreStage.Text = $dlg.SelectedPath }
 })
 
 $btnBrowseInbound.Add_Click({
     $dlg = New-Object System.Windows.Forms.FolderBrowserDialog
-    if (Test-Path $txtInbound.Text) { $dlg.SelectedPath = $txtInbound.Text }
+    if (Test-PathSafe $txtInbound.Text) { $dlg.SelectedPath = $txtInbound.Text }
     if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { $txtInbound.Text = $dlg.SelectedPath }
 })
 
 $btnBrowseExtracted.Add_Click({
     $dlg = New-Object System.Windows.Forms.FolderBrowserDialog
-    if (Test-Path $txtExtracted.Text) { $dlg.SelectedPath = $txtExtracted.Text }
+    if (Test-PathSafe $txtExtracted.Text) { $dlg.SelectedPath = $txtExtracted.Text }
     if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { $txtExtracted.Text = $dlg.SelectedPath }
 })
 
 $btnBrowse7z.Add_Click({
     $dlg = New-Object System.Windows.Forms.OpenFileDialog
     $dlg.Filter = "7z.exe|7z.exe|Executable files (*.exe)|*.exe|All files (*.*)|*.*"
-    if (Test-Path $txt7z.Text) { $dlg.InitialDirectory = Split-Path $txt7z.Text -Parent }
+    if (Test-PathSafe $txt7z.Text) { $dlg.InitialDirectory = Split-Path $txt7z.Text -Parent }
     if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { $txt7z.Text = $dlg.FileName }
 })
 
 $btnOpenPreStage.Add_Click({
     if ([string]::IsNullOrWhiteSpace($txtPreStage.Text)) {
         [System.Windows.Forms.MessageBox]::Show("No pre-stage folder is configured.", "Yoda The Unzipper") | Out-Null
-    } elseif (Test-Path $txtPreStage.Text) {
+    } elseif (Test-PathSafe $txtPreStage.Text) {
         Start-Process explorer.exe $txtPreStage.Text
     } else {
         [System.Windows.Forms.MessageBox]::Show("Pre-stage folder does not exist yet.", "Yoda The Unzipper") | Out-Null
@@ -1037,18 +1047,22 @@ $btnOpenPreStage.Add_Click({
 })
 
 $btnOpenInbound.Add_Click({
-    if (Test-Path $txtInbound.Text) { Start-Process explorer.exe $txtInbound.Text }
+    if (Test-PathSafe $txtInbound.Text) { Start-Process explorer.exe $txtInbound.Text }
     else { [System.Windows.Forms.MessageBox]::Show("Inbound folder does not exist yet.", "Yoda The Unzipper") | Out-Null }
 })
 
 $btnOpenExtracted.Add_Click({
-    if (Test-Path $txtExtracted.Text) { Start-Process explorer.exe $txtExtracted.Text }
+    if (Test-PathSafe $txtExtracted.Text) { Start-Process explorer.exe $txtExtracted.Text }
     else { [System.Windows.Forms.MessageBox]::Show("Extracted folder does not exist yet.", "Yoda The Unzipper") | Out-Null }
 })
 
 $btnOpenLogs.Add_Click({
+    if ([string]::IsNullOrWhiteSpace($txtBase.Text)) {
+        [System.Windows.Forms.MessageBox]::Show("Set a Base path first.", "Yoda The Unzipper") | Out-Null
+        return
+    }
     $logsPath = Join-Path -Path $txtBase.Text -ChildPath "logs"
-    if (Test-Path $logsPath) { Start-Process explorer.exe $logsPath }
+    if (Test-PathSafe $logsPath) { Start-Process explorer.exe $logsPath }
     else { [System.Windows.Forms.MessageBox]::Show("Logs folder does not exist yet.", "Yoda The Unzipper") | Out-Null }
 })
 
@@ -1063,11 +1077,12 @@ $btnStart.Add_Click({
     $extractedPath = $txtExtracted.Text.Trim()
     $sevenZip = $txt7z.Text.Trim()
 
-    if ([string]::IsNullOrWhiteSpace($basePath) -or [string]::IsNullOrWhiteSpace($inboundPath) -or [string]::IsNullOrWhiteSpace($extractedPath)) {
-        [System.Windows.Forms.MessageBox]::Show("Please fill in Base, Inbound and Extracted paths.", "Yoda The Unzipper") | Out-Null
+    if ([string]::IsNullOrWhiteSpace($basePath) -or [string]::IsNullOrWhiteSpace($inboundPath) -or
+        [string]::IsNullOrWhiteSpace($extractedPath) -or [string]::IsNullOrWhiteSpace($sevenZip)) {
+        [System.Windows.Forms.MessageBox]::Show("Please fill in Base, Inbound, Extracted and 7-Zip paths.", "Yoda The Unzipper") | Out-Null
         return
     }
-    if (-not (Test-Path $sevenZip)) {
+    if (-not (Test-PathSafe $sevenZip)) {
         [System.Windows.Forms.MessageBox]::Show("7-Zip executable not found at:`n$sevenZip", "Yoda The Unzipper") | Out-Null
         return
     }

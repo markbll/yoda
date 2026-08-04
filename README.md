@@ -33,6 +33,8 @@ watching a console window, you get:
 - "Open Pre-Stage / Inbound / Extracted / Logs" shortcuts, and settings
   are remembered between runs (`yoda_gui_config.json`, written next to the
   script).
+- A borderless splash screen - large Yoda ASCII art and title - shown for
+  5 seconds on startup before the main window loads.
 
 ### Pre-Stage folder (optional)
 

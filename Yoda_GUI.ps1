@@ -29,6 +29,89 @@ Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
 # ------------------------------------------------------------------------
+# Splash screen - shown for a few seconds on startup, before anything else
+# loads.
+# ------------------------------------------------------------------------
+
+function Show-SplashScreen {
+    param([int]$DurationSeconds = 5)
+
+    $SplashArt = @"
+        ___.-'`~^~'^-._
+       /                \_
+      |  (\___/)  Yoda  |
+      |  (= ^.^ =)      |
+       \_  c\~//~ ) /^--_/
+         ^~._//^~_/^
+              ||
+              ||
+              |\
+              | \_
+              |   |
+             /|   |\
+            / |   | \
+           /  |   |  \
+          /   |   |   \
+"@
+
+    $splash = New-Object System.Windows.Forms.Form
+    $splash.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::None
+    $splash.StartPosition = "CenterScreen"
+    $splash.Size = New-Object System.Drawing.Size(720, 600)
+    $splash.BackColor = [System.Drawing.Color]::Black
+    $splash.ShowInTaskbar = $false
+    $splash.TopMost = $true
+
+    $splash.Add_Paint({
+        param($s, $e)
+        $pen = New-Object System.Drawing.Pen([System.Drawing.Color]::Gold, 3)
+        $e.Graphics.DrawRectangle($pen, 1, 1, $s.Width - 3, $s.Height - 3)
+        $pen.Dispose()
+    })
+
+    $lblTitle = New-Object System.Windows.Forms.Label
+    $lblTitle.Text = "YODA THE UNZIPPER"
+    $lblTitle.Font = New-Object System.Drawing.Font("Segoe UI Black", 30, [System.Drawing.FontStyle]::Bold)
+    $lblTitle.ForeColor = [System.Drawing.Color]::Gold
+    $lblTitle.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
+    $lblTitle.Location = New-Object System.Drawing.Point(0, 40)
+    $lblTitle.Size = New-Object System.Drawing.Size($splash.Width, 60)
+
+    $lblArt = New-Object System.Windows.Forms.Label
+    $lblArt.Text = $SplashArt
+    $lblArt.Font = New-Object System.Drawing.Font("Consolas", 18)
+    $lblArt.ForeColor = [System.Drawing.Color]::Yellow
+    $lblArt.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
+    $lblArt.Location = New-Object System.Drawing.Point(0, 120)
+    $lblArt.Size = New-Object System.Drawing.Size($splash.Width, 380)
+
+    $lblSubtitle = New-Object System.Windows.Forms.Label
+    $lblSubtitle.Text = "May the Force be with you... loading"
+    $lblSubtitle.Font = New-Object System.Drawing.Font("Segoe UI", 12, [System.Drawing.FontStyle]::Italic)
+    $lblSubtitle.ForeColor = [System.Drawing.Color]::Cyan
+    $lblSubtitle.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
+    $lblSubtitle.Location = New-Object System.Drawing.Point(0, 520)
+    $lblSubtitle.Size = New-Object System.Drawing.Size($splash.Width, 40)
+
+    $splash.Controls.AddRange(@($lblTitle, $lblArt, $lblSubtitle))
+
+    $splash.Show()
+    $splash.Refresh()
+    [System.Windows.Forms.Application]::DoEvents()
+
+    $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+    while ($stopwatch.Elapsed.TotalSeconds -lt $DurationSeconds) {
+        [System.Windows.Forms.Application]::DoEvents()
+        Start-Sleep -Milliseconds 50
+    }
+
+    $splash.Close()
+    $splash.Dispose()
+}
+
+Show-SplashScreen -DurationSeconds 5
+
+# ------------------------------------------------------------------------
 # Persisted configuration
 # ------------------------------------------------------------------------
 

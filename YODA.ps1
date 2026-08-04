@@ -1,9 +1,8 @@
 <#
-    Yoda_GUI.ps1
+    YODA.ps1
 
-    A Windows Forms front-end for "Yoda The Unzipper" - the watch-folder
-    7-Zip/ZIP split-archive extractor scripts bundled in
-    Yoda_The_Unzipper-main.zip.
+    A Windows Forms GUI for YODA - the watch-folder 7-Zip/ZIP
+    split-archive extractor scripts bundled in Yoda_The_Unzipper-main.zip.
 
     Instead of editing command-line parameters and staring at a console
     window, this lets you configure the watcher, start/stop it, and watch
@@ -13,7 +12,7 @@
     .NET WinForms, and 7-Zip installed.
 
     Run with:
-        powershell.exe -ExecutionPolicy Bypass -File Yoda_GUI.ps1
+        powershell.exe -ExecutionPolicy Bypass -File YODA.ps1
 #>
 
 # WinForms requires a Single Threaded Apartment. Relaunch under -STA if needed.
@@ -505,7 +504,7 @@ $EngineScriptBlock = {
         return
     }
 
-    Write-Log "=== Yoda The Unzipper engine started ===" -Type "Info"
+    Write-Log "=== YODA engine started ===" -Type "Info"
 
     if ($EnableStarWarsTheme -and $EnableThemeBeeps) {
         try {
@@ -651,7 +650,7 @@ $EngineScriptBlock = {
         }
     }
 
-    Write-Log "=== Yoda The Unzipper engine stopped ===" -Type "Warning"
+    Write-Log "=== YODA engine stopped ===" -Type "Warning"
     $Sync.State = "Stopped"
 }
 
@@ -791,7 +790,7 @@ $StagerScriptBlock = {
 # ------------------------------------------------------------------------
 
 $Form = New-Object System.Windows.Forms.Form
-$Form.Text = "Yoda The Unzipper"
+$Form.Text = "YODA"
 $Form.Size = New-Object System.Drawing.Size(950, 800)
 $Form.MinimumSize = New-Object System.Drawing.Size(860, 700)
 $Form.StartPosition = "CenterScreen"
@@ -1121,32 +1120,32 @@ $btnBrowse7z.Add_Click({
 
 $btnOpenPreStage.Add_Click({
     if ([string]::IsNullOrWhiteSpace($txtPreStage.Text)) {
-        [System.Windows.Forms.MessageBox]::Show("No pre-stage folder is configured.", "Yoda The Unzipper") | Out-Null
+        [System.Windows.Forms.MessageBox]::Show("No pre-stage folder is configured.", "YODA") | Out-Null
     } elseif (Test-PathSafe $txtPreStage.Text) {
         Start-Process explorer.exe $txtPreStage.Text
     } else {
-        [System.Windows.Forms.MessageBox]::Show("Pre-stage folder does not exist yet.", "Yoda The Unzipper") | Out-Null
+        [System.Windows.Forms.MessageBox]::Show("Pre-stage folder does not exist yet.", "YODA") | Out-Null
     }
 })
 
 $btnOpenInbound.Add_Click({
     if (Test-PathSafe $txtInbound.Text) { Start-Process explorer.exe $txtInbound.Text }
-    else { [System.Windows.Forms.MessageBox]::Show("Inbound folder does not exist yet.", "Yoda The Unzipper") | Out-Null }
+    else { [System.Windows.Forms.MessageBox]::Show("Inbound folder does not exist yet.", "YODA") | Out-Null }
 })
 
 $btnOpenExtracted.Add_Click({
     if (Test-PathSafe $txtExtracted.Text) { Start-Process explorer.exe $txtExtracted.Text }
-    else { [System.Windows.Forms.MessageBox]::Show("Extracted folder does not exist yet.", "Yoda The Unzipper") | Out-Null }
+    else { [System.Windows.Forms.MessageBox]::Show("Extracted folder does not exist yet.", "YODA") | Out-Null }
 })
 
 $btnOpenLogs.Add_Click({
     if ([string]::IsNullOrWhiteSpace($txtBase.Text)) {
-        [System.Windows.Forms.MessageBox]::Show("Set a Base path first.", "Yoda The Unzipper") | Out-Null
+        [System.Windows.Forms.MessageBox]::Show("Set a Base path first.", "YODA") | Out-Null
         return
     }
     $logsPath = Join-Path -Path $txtBase.Text -ChildPath "logs"
     if (Test-PathSafe $logsPath) { Start-Process explorer.exe $logsPath }
-    else { [System.Windows.Forms.MessageBox]::Show("Logs folder does not exist yet.", "Yoda The Unzipper") | Out-Null }
+    else { [System.Windows.Forms.MessageBox]::Show("Logs folder does not exist yet.", "YODA") | Out-Null }
 })
 
 $btnClearLog.Add_Click({ $rtbLog.Clear() })
@@ -1162,16 +1161,16 @@ $btnStart.Add_Click({
 
     if ([string]::IsNullOrWhiteSpace($basePath) -or [string]::IsNullOrWhiteSpace($inboundPath) -or
         [string]::IsNullOrWhiteSpace($extractedPath) -or [string]::IsNullOrWhiteSpace($sevenZip)) {
-        [System.Windows.Forms.MessageBox]::Show("Please fill in Base, Inbound, Extracted and 7-Zip paths.", "Yoda The Unzipper") | Out-Null
+        [System.Windows.Forms.MessageBox]::Show("Please fill in Base, Inbound, Extracted and 7-Zip paths.", "YODA") | Out-Null
         return
     }
     if (-not (Test-PathSafe $sevenZip)) {
-        [System.Windows.Forms.MessageBox]::Show("7-Zip executable not found at:`n$sevenZip", "Yoda The Unzipper") | Out-Null
+        [System.Windows.Forms.MessageBox]::Show("7-Zip executable not found at:`n$sevenZip", "YODA") | Out-Null
         return
     }
     if (-not [string]::IsNullOrWhiteSpace($preStagePath) -and
         ($preStagePath.TrimEnd('\', '/') -ieq $inboundPath.TrimEnd('\', '/'))) {
-        [System.Windows.Forms.MessageBox]::Show("Pre-stage and Inbound must be different folders.", "Yoda The Unzipper") | Out-Null
+        [System.Windows.Forms.MessageBox]::Show("Pre-stage and Inbound must be different folders.", "YODA") | Out-Null
         return
     }
 

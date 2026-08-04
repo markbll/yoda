@@ -1,4 +1,4 @@
-# Yoda The Unzipper
+# YODA
 
 A self-healing watch-folder extractor for single or multi-part 7-Zip / ZIP
 archives, with an optional Star Wars / Yoda theme. It watches an inbound
@@ -13,10 +13,10 @@ The various CLI script revisions (`Unzipper5.ps1`, `YodaTheUnzipperv2.ps1`,
 
 ## GUI
 
-[`Yoda_GUI.ps1`](Yoda_GUI.ps1) is a Windows Forms front-end for the engine,
-built from `Yoda_Unzipper.ps1` (the most complete revision, with the
-Star Wars theme options). Instead of editing command-line parameters and
-watching a console window, you get:
+[`YODA.ps1`](YODA.ps1) is a Windows Forms front-end for the engine, built
+from `Yoda_Unzipper.ps1` (the most complete revision, with the Star Wars
+theme options). Instead of editing command-line parameters and watching a
+console window, you get:
 
 - Folder pickers for Base / Pre-Stage / Inbound / Extracted paths, plus a
   7-Zip path field with a browse button.
@@ -74,10 +74,10 @@ than overwriting anything.
 
 ### Run it
 
-Double-click **`Start_Yoda_GUI.bat`**, or run directly:
+Double-click **`Start_YODA.bat`**, or run directly:
 
 ```powershell
-powershell.exe -ExecutionPolicy Bypass -File Yoda_GUI.ps1
+powershell.exe -ExecutionPolicy Bypass -File YODA.ps1
 ```
 
 ### Behavior differences from the classic CLI scripts

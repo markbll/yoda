@@ -35,28 +35,49 @@ Add-Type -AssemblyName System.Drawing
 function Show-SplashScreen {
     param([int]$DurationSeconds = 5)
 
-    $SplashArt = @"
-        ___.-'`~^~'^-._
-       /                \_
-      |  (\___/)  Yoda  |
-      |  (= ^.^ =)      |
-       \_  c\~//~ ) /^--_/
-         ^~._//^~_/^
-              ||
-              ||
-              |\
-              | \_
-              |   |
-             /|   |\
-            / |   | \
-           /  |   |  \
-          /   |   |   \
-"@
+    $SplashArt = @'
+                        .--~~~~~~~~~~~~--.
+                    .-~'    ~    ~   ~    '~-.
+                  ,-'      ~   ~    ~  ~       '-.
+                ,'        ~    ~   ~     ~         ',
+        .----. /                                     \ .----.
+      ,'      \|                                       |/      ',
+     /  .---.  |                                       |  .---.  \
+    | ,'     `.|            .---------------.          |.'     `. |
+    |(         )             |     O     O   |         |(        )|
+    | `.     ,' |            |               |          | `.     ,'|
+     \  '---'  \|            |               |          |/  '---'  /
+      \.       |\             '-------.-----'          /|       ,'/
+       \       | \                    |                / |      /
+        \      |  \                  ---                /  |    /
+         \     |   \                                    /   |   /
+          \    |    '-.                              ,-'    |   /
+           \   |       '-.                        ,-'       |  /
+            \  |          '-.                  ,-'          |  /
+             \ |             '-.__          __.-'           | /
+              \|                 '-.______-'                |/
+               '                                             '
+                \                                           /
+                 \                                         /
+                  '.                                     .'
+                    \                                   /
+                     \                                 /
+                      \                               /
+                       \                             /
+                        '-.____              ____.-'
+                              '-.__      __.-'
+                                   '.__.'
+                                    |  |
+                                    |  |
+                                   .'  '.
+                                  (      )
+                                   '.__.'
+'@
 
     $splash = New-Object System.Windows.Forms.Form
     $splash.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::None
     $splash.StartPosition = "CenterScreen"
-    $splash.Size = New-Object System.Drawing.Size(720, 600)
+    $splash.Size = New-Object System.Drawing.Size(800, 820)
     $splash.BackColor = [System.Drawing.Color]::Black
     $splash.ShowInTaskbar = $false
     $splash.TopMost = $true
@@ -70,26 +91,26 @@ function Show-SplashScreen {
 
     $lblTitle = New-Object System.Windows.Forms.Label
     $lblTitle.Text = "YODA THE UNZIPPER"
-    $lblTitle.Font = New-Object System.Drawing.Font("Segoe UI Black", 30, [System.Drawing.FontStyle]::Bold)
+    $lblTitle.Font = New-Object System.Drawing.Font("Segoe UI Black", 26, [System.Drawing.FontStyle]::Bold)
     $lblTitle.ForeColor = [System.Drawing.Color]::Gold
     $lblTitle.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
-    $lblTitle.Location = New-Object System.Drawing.Point(0, 40)
-    $lblTitle.Size = New-Object System.Drawing.Size($splash.Width, 60)
+    $lblTitle.Location = New-Object System.Drawing.Point(0, 15)
+    $lblTitle.Size = New-Object System.Drawing.Size($splash.Width, 55)
 
     $lblArt = New-Object System.Windows.Forms.Label
     $lblArt.Text = $SplashArt
-    $lblArt.Font = New-Object System.Drawing.Font("Consolas", 18)
+    $lblArt.Font = New-Object System.Drawing.Font("Consolas", 12)
     $lblArt.ForeColor = [System.Drawing.Color]::Yellow
     $lblArt.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
-    $lblArt.Location = New-Object System.Drawing.Point(0, 120)
-    $lblArt.Size = New-Object System.Drawing.Size($splash.Width, 380)
+    $lblArt.Location = New-Object System.Drawing.Point(0, 80)
+    $lblArt.Size = New-Object System.Drawing.Size($splash.Width, 640)
 
     $lblSubtitle = New-Object System.Windows.Forms.Label
     $lblSubtitle.Text = "May the Force be with you... loading"
     $lblSubtitle.Font = New-Object System.Drawing.Font("Segoe UI", 12, [System.Drawing.FontStyle]::Italic)
     $lblSubtitle.ForeColor = [System.Drawing.Color]::Cyan
     $lblSubtitle.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
-    $lblSubtitle.Location = New-Object System.Drawing.Point(0, 520)
+    $lblSubtitle.Location = New-Object System.Drawing.Point(0, 750)
     $lblSubtitle.Size = New-Object System.Drawing.Size($splash.Width, 40)
 
     $splash.Controls.AddRange(@($lblTitle, $lblArt, $lblSubtitle))
@@ -229,23 +250,44 @@ $EngineScriptBlock = {
         "Waiting" = "Patience, you must have. Archives, they are coming, yes."
     }
 
-    $YodaArt = @"
-        ___.-'`~^~'^-._
-       /                \_
-      |  (\___/)  Yoda  |
-      |  (= ^.^ =)      |
-       \_  c\~//~ ) /^--_/
-         ^~._//^~_/^
-              ||
-              ||
-              |\
-              | \_
-              |   |
-             /|   |\
-            / |   | \
-           /  |   |  \
-          /   |   |   \
-"@
+    $YodaArt = @'
+                        .--~~~~~~~~~~~~--.
+                    .-~'    ~    ~   ~    '~-.
+                  ,-'      ~   ~    ~  ~       '-.
+                ,'        ~    ~   ~     ~         ',
+        .----. /                                     \ .----.
+      ,'      \|                                       |/      ',
+     /  .---.  |                                       |  .---.  \
+    | ,'     `.|            .---------------.          |.'     `. |
+    |(         )             |     O     O   |         |(        )|
+    | `.     ,' |            |               |          | `.     ,'|
+     \  '---'  \|            |               |          |/  '---'  /
+      \.       |\             '-------.-----'          /|       ,'/
+       \       | \                    |                / |      /
+        \      |  \                  ---                /  |    /
+         \     |   \                                    /   |   /
+          \    |    '-.                              ,-'    |   /
+           \   |       '-.                        ,-'       |  /
+            \  |          '-.                  ,-'          |  /
+             \ |             '-.__          __.-'           | /
+              \|                 '-.______-'                |/
+               '                                             '
+                \                                           /
+                 \                                         /
+                  '.                                     .'
+                    \                                   /
+                     \                                 /
+                      \                               /
+                       \                             /
+                        '-.____              ____.-'
+                              '-.__      __.-'
+                                   '.__.'
+                                    |  |
+                                    |  |
+                                   .'  '.
+                                  (      )
+                                   '.__.'
+'@
 
     function Write-Log {
         param([string]$Message, [ValidateSet("Info", "Success", "Warning", "Error")][string]$Type = "Info")

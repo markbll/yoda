@@ -139,10 +139,10 @@ $ConfigFile = Join-Path -Path $PSScriptRoot -ChildPath "yoda_gui_config.json"
 
 function Get-DefaultConfig {
     [PSCustomObject]@{
-        BasePath                  = "C:\unzipper"
+        BasePath                  = "C:\yoda"
         PreStagePath              = ""
-        InboundPath               = "C:\unzipper\inbound"
-        ExtractedPath             = "C:\unzipper\extracted"
+        InboundPath               = "C:\yoda\inbound"
+        ExtractedPath             = "C:\yoda\extracted"
         SevenZipPath              = "C:\Program Files\7-Zip\7z.exe"
         CheckIntervalSeconds      = 30
         EmptyCyclesBeforeRestart  = 10
@@ -343,11 +343,25 @@ $EngineScriptBlock = {
         return $false
     }
 
+    # Windows silently strips trailing dots and spaces from a path segment
+    # when it's created through normal (non-\\?\-prefixed) APIs - so an
+    # archive whose base name ends in "." (e.g. source files named
+    # "TEST..001", "TEST..002", ...) gets extracted into a folder that
+    # actually exists as "TEST" on disk, while every log line still shows
+    # "TEST." - making it look like extraction silently failed when it
+    # didn't. Apply this wherever a base name becomes a folder name.
+    function ConvertTo-SafeFolderName {
+        param([string]$Name)
+        $Safe = $Name.TrimEnd('.', ' ')
+        if ([string]::IsNullOrWhiteSpace($Safe)) { $Safe = "archive" }
+        return $Safe
+    }
+
     function Get-ArchiveGroups {
         param([string]$Path)
         try {
             $Files = @(Get-ChildItem -Path $Path -File -ErrorAction SilentlyContinue |
-                       Where-Object { $_.Extension -match '\.(7z|zip)' -or $_.Name -match '\.(001|002|003|004|005|006|007|008|009)$' })
+                       Where-Object { $_.Extension -match '\.(7z|zip)' -or $_.Name -match '\.\d{3}$' })
             if ($Files.Count -eq 0) { return @{} }
             $Groups = @{}
             foreach ($File in $Files) {
@@ -460,7 +474,7 @@ $EngineScriptBlock = {
             $ArchiveName = Split-Path $FirstPartPath -Leaf
             $ArchiveName = $ArchiveName -replace '\.\d{3}$', '' -replace '\.zip$', '' -replace '\.7z$', ''
             $Timestamp = Get-Date -Format "yyyy-MM-dd_HH-mm-ss"
-            $FolderName = "$ArchiveName`_$Timestamp"
+            $FolderName = "$(ConvertTo-SafeFolderName $ArchiveName)`_$Timestamp"
             $FinalDestination = Join-Path -Path $DestinationPath -ChildPath $FolderName
 
             if (-not (Test-Path $FinalDestination)) {
@@ -647,7 +661,7 @@ $EngineScriptBlock = {
                         continue
                     }
 
-                    $ArchiveExtractPath = Join-Path -Path $ExtractedPath -ChildPath $BaseName
+                    $ArchiveExtractPath = Join-Path -Path $ExtractedPath -ChildPath (ConvertTo-SafeFolderName $BaseName)
                     if (-not (Test-Path $ArchiveExtractPath)) { New-Item -ItemType Directory -Path $ArchiveExtractPath -Force | Out-Null }
 
                     Write-Log "Starting extraction process..." -Type "Info"

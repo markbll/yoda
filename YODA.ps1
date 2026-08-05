@@ -753,14 +753,19 @@ $StagerScriptBlock = {
             foreach ($File in $Candidates) {
                 if ($Sync.StopRequested) { break }
                 try {
-                    if (-not (Wait-StagerFileSettled -FilePath $File.FullName -ConfirmSeconds 10)) {
-                        Write-StagerLog "Write not yet confirmed complete, will recheck: $($File.Name)" -Type "Info"
-                        continue
-                    }
-
+                    # Check the (cheap, instant) collision case before paying the
+                    # (up to 10-second) settle-confirmation cost below - otherwise a
+                    # permanently-colliding file would eat a full confirm-wait on
+                    # every single scan cycle, delaying every other candidate queued
+                    # behind it in the same pass.
                     $Destination = Join-Path -Path $InboundPath -ChildPath $File.Name
                     if (Test-Path $Destination) {
                         Write-StagerLog "Skipping $($File.Name) - a file with that name already exists in Inbound" -Type "Warning"
+                        continue
+                    }
+
+                    if (-not (Wait-StagerFileSettled -FilePath $File.FullName -ConfirmSeconds 10)) {
+                        Write-StagerLog "Write not yet confirmed complete, will recheck: $($File.Name)" -Type "Info"
                         continue
                     }
 

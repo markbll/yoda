@@ -645,6 +645,19 @@ $EngineScriptBlock = {
 
                     $ExpectedCount = Get-ExpectedPartCount -FilePath $FirstPart.FullName
                     if ($null -eq $ExpectedCount) {
+                        if ($FirstPart.Name -match '\.\d{3}$') {
+                            # This IS a numbered split part, but 7-Zip could not report a
+                            # volume count from it alone. For 7-Zip's raw volume-split
+                            # format, the end-of-archive header (which is where "Volumes="
+                            # lives) is only reconstructable once every part is present -
+                            # `7z l` on a partial set fails outright rather than reporting a
+                            # partial answer. Treating that failure as "single-part" would
+                            # test-and-permanently-fail an archive that is simply still
+                            # arriving, so wait for more parts instead of guessing.
+                            Write-Log "Cannot determine total volume count yet (needs every part present) - waiting for more parts: $BaseName" -Type "Warning"
+                            if (-not $ProcessedArchives.ContainsKey($BaseName)) { $ProcessedArchives[$BaseName] = "waiting" }
+                            continue
+                        }
                         $ExpectedCount = 1
                         Write-Log "Single-part archive detected: $BaseName" -Type "Info"
                     }

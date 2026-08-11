@@ -1,5 +1,7 @@
 # YODA
 
+**GUI version: 4.9**
+
 A self-healing watch-folder extractor for single or multi-part 7-Zip / ZIP
 archives, with an optional Star Wars / Yoda theme. It watches an inbound
 folder, waits for split archives (`.7z.001`, `.zip.001`, ...) to fully

@@ -1,5 +1,6 @@
 <#
     YODA.ps1
+    Version 4.9
 
     A Windows Forms GUI for YODA - the watch-folder 7-Zip/ZIP
     split-archive extractor scripts bundled in Yoda_The_Unzipper-main.zip.
@@ -14,6 +15,8 @@
     Run with:
         powershell.exe -ExecutionPolicy Bypass -File YODA.ps1
 #>
+
+$YodaGuiVersion = "4.9"
 
 # WinForms requires a Single Threaded Apartment. Relaunch under -STA if needed.
 if ([System.Threading.Thread]::CurrentThread.GetApartmentState() -ne 'STA') {
@@ -106,7 +109,7 @@ function Show-SplashScreen {
     $lblArt.Size = New-Object System.Drawing.Size($splash.Width, 640)
 
     $lblSubtitle = New-Object System.Windows.Forms.Label
-    $lblSubtitle.Text = "May the Force be with you... loading"
+    $lblSubtitle.Text = "v$YodaGuiVersion - May the Force be with you... loading"
     $lblSubtitle.Font = New-Object System.Drawing.Font("Segoe UI", 12, [System.Drawing.FontStyle]::Italic)
     $lblSubtitle.ForeColor = [System.Drawing.Color]::Cyan
     $lblSubtitle.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
@@ -851,7 +854,7 @@ $StagerScriptBlock = {
 # ------------------------------------------------------------------------
 
 $Form = New-Object System.Windows.Forms.Form
-$Form.Text = "YODA"
+$Form.Text = "YODA v$YodaGuiVersion"
 $Form.Size = New-Object System.Drawing.Size(950, 800)
 $Form.MinimumSize = New-Object System.Drawing.Size(860, 700)
 $Form.StartPosition = "CenterScreen"

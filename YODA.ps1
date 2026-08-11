@@ -408,6 +408,29 @@ $EngineScriptBlock = {
         }
     }
 
+    # Collapses a list of missing part numbers into readable ranges, e.g.
+    # 51,52,53,54,102 -> "051-054, 102" instead of a long comma list - matters
+    # once archives run into the hundreds of parts.
+    function Format-PartNumberRanges {
+        param([int[]]$Numbers)
+        if ($Numbers.Count -eq 0) { return "" }
+        $Sorted = $Numbers | Sort-Object -Unique
+        $Ranges = @()
+        $RangeStart = $Sorted[0]
+        $RangeEnd = $Sorted[0]
+        for ($i = 1; $i -lt $Sorted.Count; $i++) {
+            if ($Sorted[$i] -eq ($RangeEnd + 1)) {
+                $RangeEnd = $Sorted[$i]
+            } else {
+                $Ranges += if ($RangeStart -eq $RangeEnd) { "{0:000}" -f $RangeStart } else { "{0:000}-{1:000}" -f $RangeStart, $RangeEnd }
+                $RangeStart = $Sorted[$i]
+                $RangeEnd = $Sorted[$i]
+            }
+        }
+        $Ranges += if ($RangeStart -eq $RangeEnd) { "{0:000}" -f $RangeStart } else { "{0:000}-{1:000}" -f $RangeStart, $RangeEnd }
+        return ($Ranges -join ", ")
+    }
+
     function Verify-AllPartsPresentAndStable {
         param([string]$BaseName, [string]$SourcePath, [int]$ExpectedCount)
         $PartFiles = @(Get-ChildItem -Path $SourcePath -File -ErrorAction SilentlyContinue |
@@ -420,15 +443,25 @@ $EngineScriptBlock = {
             Write-Log $Message -Type "Warning"
             Write-MissingPartsLog $BaseName $Message
 
-            $MissingFiles = @()
-            for ($i = 1; $i -le $ExpectedCount; $i++) {
-                $PartNum = $i.ToString("000")
-                $PartName = "$BaseName.$PartNum"
-                if (-not ($PartFiles | Where-Object { $_.Name -eq $PartName })) { $MissingFiles += $PartName }
+            # Identify missing part NUMBERS by inspecting the numeric suffix of each
+            # file actually present, rather than reconstructing a filename from
+            # BaseName - the middle extension (.7z, .zip, or none) varies and can't
+            # be reliably guessed, so a reconstructed name almost never matches a
+            # real "name.7z.NNN"-style file, which silently broke this before.
+            $PresentNumbers = [System.Collections.Generic.HashSet[int]]::new()
+            foreach ($Part in $PartFiles) {
+                if ($Part.Name -match '\.(\d{3})$') {
+                    [void]$PresentNumbers.Add([int]$matches[1])
+                }
             }
-            if ($MissingFiles.Count -gt 0) {
-                Write-Log "Missing files: $($MissingFiles -join ', ')" -Type "Warning"
-                Write-MissingPartsLog $BaseName "Missing: $($MissingFiles -join ', ')"
+            $MissingNumbers = @()
+            for ($i = 1; $i -le $ExpectedCount; $i++) {
+                if (-not $PresentNumbers.Contains($i)) { $MissingNumbers += $i }
+            }
+            if ($MissingNumbers.Count -gt 0) {
+                $MissingSummary = Format-PartNumberRanges -Numbers $MissingNumbers
+                Write-Log "Missing part number(s): $MissingSummary" -Type "Warning"
+                Write-MissingPartsLog $BaseName "Missing part number(s): $MissingSummary"
             }
             return $false
         }
@@ -673,7 +706,28 @@ $EngineScriptBlock = {
                                 Write-FailedArchiveLog $BaseName "Stuck - cannot determine volume count" "First seen unknown at $($UnknownVolumeCountSince[$BaseName].ToString('yyyy-MM-dd HH:mm:ss')). $($PartFiles.Count) part(s) currently present in Inbound."
                                 if ($EnableThemeBeeps) { try { [Console]::Beep(300, 500) } catch { } }
                             }
-                            Write-Log "Cannot determine total volume count yet (needs every part present) - waiting for more parts: $BaseName" -Type "Warning"
+                            # We don't know the true total yet, but we can still show gaps
+                            # within the range of part numbers seen so far - e.g. parts
+                            # 1-45 present but 012 and 030 missing - which is the useful,
+                            # common case (a large archive trickling in over time), unlike
+                            # Verify-AllPartsPresentAndStable's missing-part detection below,
+                            # which by construction only runs once every single part is
+                            # already present (see the comment above).
+                            $PresentNumbers = [System.Collections.Generic.HashSet[int]]::new()
+                            foreach ($Part in $PartFiles) {
+                                if ($Part.Name -match '\.(\d{3})$') { [void]$PresentNumbers.Add([int]$matches[1]) }
+                            }
+                            $GapMsg = ""
+                            if ($PresentNumbers.Count -gt 0) {
+                                $HighestSeen = ($PresentNumbers | Measure-Object -Maximum).Maximum
+                                $GapsSoFar = @(1..($HighestSeen - 1) | Where-Object { -not $PresentNumbers.Contains($_) })
+                                if ($GapsSoFar.Count -gt 0) {
+                                    $GapMsg = " - have parts up to $($HighestSeen.ToString('000')) with gap(s) at: $(Format-PartNumberRanges -Numbers $GapsSoFar)"
+                                } else {
+                                    $GapMsg = " - have parts 001-$($HighestSeen.ToString('000')) with no gaps so far"
+                                }
+                            }
+                            Write-Log "Cannot determine total volume count yet (needs every part present)$GapMsg - waiting for more parts: $BaseName" -Type "Warning"
                             if (-not $ProcessedArchives.ContainsKey($BaseName)) { $ProcessedArchives[$BaseName] = "waiting" }
                             continue
                         }

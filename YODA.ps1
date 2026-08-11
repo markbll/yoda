@@ -242,6 +242,9 @@ $EngineScriptBlock = {
     $ErrorCount = 0
     $ProcessedArchives = @{}
     $ConsecutiveEmptyCycles = 0
+    $UnknownVolumeCountSince = @{}
+    $UnknownVolumeCountAlerted = @{}
+    $StuckVolumeCountAlertMinutes = 15
 
     if (-not (Test-Path $LogFolder)) {
         New-Item -ItemType Directory -Path $LogFolder -Force | Out-Null
@@ -616,6 +619,8 @@ $EngineScriptBlock = {
                     $ProcessedArchives = @{}
                     $ErrorCount = 0
                     $ConsecutiveEmptyCycles = 0
+                    $UnknownVolumeCountSince = @{}
+                    $UnknownVolumeCountAlerted = @{}
                 }
 
                 Wait-NextCycle $CheckIntervalSeconds
@@ -653,13 +658,30 @@ $EngineScriptBlock = {
                             # `7z l` on a partial set fails outright rather than reporting a
                             # partial answer. Treating that failure as "single-part" would
                             # test-and-permanently-fail an archive that is simply still
-                            # arriving, so wait for more parts instead of guessing.
+                            # arriving, so wait for more parts instead of guessing. This can
+                            # in principle wait forever (e.g. a genuinely corrupted first
+                            # volume with every real part present) - by design, that is never
+                            # auto-failed. Instead, escalate once so it doesn't go unnoticed.
+                            if (-not $UnknownVolumeCountSince.ContainsKey($BaseName)) {
+                                $UnknownVolumeCountSince[$BaseName] = Get-Date
+                            }
+                            $StuckMinutes = ((Get-Date) - $UnknownVolumeCountSince[$BaseName]).TotalMinutes
+                            if ($StuckMinutes -ge $StuckVolumeCountAlertMinutes -and -not $UnknownVolumeCountAlerted.ContainsKey($BaseName)) {
+                                $UnknownVolumeCountAlerted[$BaseName] = $true
+                                $StuckMsg = "STUCK: '$BaseName' has been unable to determine its total volume count for $([math]::Round($StuckMinutes, 1)) minute(s) ($($PartFiles.Count) part(s) currently present in Inbound). If every part is genuinely present, the first volume (.001) may be corrupted; otherwise the archive is still incomplete. It will keep waiting indefinitely and will NOT be auto-failed - check manually if this persists."
+                                Write-Log $StuckMsg -Type "Error"
+                                Write-FailedArchiveLog $BaseName "Stuck - cannot determine volume count" "First seen unknown at $($UnknownVolumeCountSince[$BaseName].ToString('yyyy-MM-dd HH:mm:ss')). $($PartFiles.Count) part(s) currently present in Inbound."
+                                if ($EnableThemeBeeps) { try { [Console]::Beep(300, 500) } catch { } }
+                            }
                             Write-Log "Cannot determine total volume count yet (needs every part present) - waiting for more parts: $BaseName" -Type "Warning"
                             if (-not $ProcessedArchives.ContainsKey($BaseName)) { $ProcessedArchives[$BaseName] = "waiting" }
                             continue
                         }
                         $ExpectedCount = 1
                         Write-Log "Single-part archive detected: $BaseName" -Type "Info"
+                    } else {
+                        $UnknownVolumeCountSince.Remove($BaseName)
+                        $UnknownVolumeCountAlerted.Remove($BaseName)
                     }
 
                     $AllPartsPresentAndStable = Verify-AllPartsPresentAndStable -BaseName $BaseName -SourcePath $InboundPath -ExpectedCount $ExpectedCount

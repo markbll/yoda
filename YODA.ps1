@@ -242,9 +242,14 @@ $EngineScriptBlock = {
     $ErrorCount = 0
     $ProcessedArchives = @{}
     $ConsecutiveEmptyCycles = 0
-    $UnknownVolumeCountSince = @{}
+    $LastPartProgressAt = @{}
+    $LastPartFingerprint = @{}
     $UnknownVolumeCountAlerted = @{}
-    $StuckVolumeCountAlertMinutes = 15
+    # This measures minutes of NO NEW PARTS ARRIVING, not minutes-incomplete -
+    # a large archive can legitimately take hours to fully arrive, so alerting
+    # on elapsed time alone would false-alarm on every normal slow transfer.
+    # Lack of *progress* for this long is the actual stuck signal.
+    $StalledPartArrivalAlertMinutes = 60
 
     if (-not (Test-Path $LogFolder)) {
         New-Item -ItemType Directory -Path $LogFolder -Force | Out-Null
@@ -652,7 +657,8 @@ $EngineScriptBlock = {
                     $ProcessedArchives = @{}
                     $ErrorCount = 0
                     $ConsecutiveEmptyCycles = 0
-                    $UnknownVolumeCountSince = @{}
+                    $LastPartProgressAt = @{}
+                    $LastPartFingerprint = @{}
                     $UnknownVolumeCountAlerted = @{}
                 }
 
@@ -691,19 +697,32 @@ $EngineScriptBlock = {
                             # `7z l` on a partial set fails outright rather than reporting a
                             # partial answer. Treating that failure as "single-part" would
                             # test-and-permanently-fail an archive that is simply still
-                            # arriving, so wait for more parts instead of guessing. This can
-                            # in principle wait forever (e.g. a genuinely corrupted first
-                            # volume with every real part present) - by design, that is never
-                            # auto-failed. Instead, escalate once so it doesn't go unnoticed.
-                            if (-not $UnknownVolumeCountSince.ContainsKey($BaseName)) {
-                                $UnknownVolumeCountSince[$BaseName] = Get-Date
+                            # arriving, so wait for more parts instead of guessing.
+                            #
+                            # A large archive can legitimately take hours to fully arrive,
+                            # in any part order, so "still incomplete" is not itself a
+                            # problem - it can wait indefinitely and is never auto-failed.
+                            # What DOES matter is whether parts are still actually showing
+                            # up. Track a fingerprint of exactly which part numbers are
+                            # present; only escalate once that fingerprint has gone
+                            # completely unchanged (no new/different parts at all) for a
+                            # long stretch - a real stall, not just a slow transfer.
+                            $PresentNumbers = [System.Collections.Generic.HashSet[int]]::new()
+                            foreach ($Part in $PartFiles) {
+                                if ($Part.Name -match '\.(\d{3})$') { [void]$PresentNumbers.Add([int]$matches[1]) }
                             }
-                            $StuckMinutes = ((Get-Date) - $UnknownVolumeCountSince[$BaseName]).TotalMinutes
-                            if ($StuckMinutes -ge $StuckVolumeCountAlertMinutes -and -not $UnknownVolumeCountAlerted.ContainsKey($BaseName)) {
+                            $Fingerprint = ($PresentNumbers | Sort-Object) -join ','
+                            if (-not $LastPartFingerprint.ContainsKey($BaseName) -or $LastPartFingerprint[$BaseName] -ne $Fingerprint) {
+                                $LastPartFingerprint[$BaseName] = $Fingerprint
+                                $LastPartProgressAt[$BaseName] = Get-Date
+                                if ($UnknownVolumeCountAlerted.ContainsKey($BaseName)) { $UnknownVolumeCountAlerted.Remove($BaseName) }
+                            }
+                            $StalledMinutes = ((Get-Date) - $LastPartProgressAt[$BaseName]).TotalMinutes
+                            if ($StalledMinutes -ge $StalledPartArrivalAlertMinutes -and -not $UnknownVolumeCountAlerted.ContainsKey($BaseName)) {
                                 $UnknownVolumeCountAlerted[$BaseName] = $true
-                                $StuckMsg = "STUCK: '$BaseName' has been unable to determine its total volume count for $([math]::Round($StuckMinutes, 1)) minute(s) ($($PartFiles.Count) part(s) currently present in Inbound). If every part is genuinely present, the first volume (.001) may be corrupted; otherwise the archive is still incomplete. It will keep waiting indefinitely and will NOT be auto-failed - check manually if this persists."
+                                $StuckMsg = "STUCK: '$BaseName' has had NO new parts arrive for $([math]::Round($StalledMinutes, 1)) minute(s) and its total volume count still cannot be determined ($($PartFiles.Count) part(s) currently present in Inbound). If every part is genuinely present, the first volume (.001) may be corrupted; otherwise the transfer may have stopped. It will keep waiting indefinitely and will NOT be auto-failed - check manually if this persists."
                                 Write-Log $StuckMsg -Type "Error"
-                                Write-FailedArchiveLog $BaseName "Stuck - cannot determine volume count" "First seen unknown at $($UnknownVolumeCountSince[$BaseName].ToString('yyyy-MM-dd HH:mm:ss')). $($PartFiles.Count) part(s) currently present in Inbound."
+                                Write-FailedArchiveLog $BaseName "Stuck - no new parts arriving" "No progress since $($LastPartProgressAt[$BaseName].ToString('yyyy-MM-dd HH:mm:ss')). $($PartFiles.Count) part(s) currently present in Inbound."
                                 if ($EnableThemeBeeps) { try { [Console]::Beep(300, 500) } catch { } }
                             }
                             # We don't know the true total yet, but we can still show gaps
@@ -713,10 +732,6 @@ $EngineScriptBlock = {
                             # Verify-AllPartsPresentAndStable's missing-part detection below,
                             # which by construction only runs once every single part is
                             # already present (see the comment above).
-                            $PresentNumbers = [System.Collections.Generic.HashSet[int]]::new()
-                            foreach ($Part in $PartFiles) {
-                                if ($Part.Name -match '\.(\d{3})$') { [void]$PresentNumbers.Add([int]$matches[1]) }
-                            }
                             $GapMsg = ""
                             if ($PresentNumbers.Count -gt 0) {
                                 $HighestSeen = ($PresentNumbers | Measure-Object -Maximum).Maximum
@@ -734,7 +749,8 @@ $EngineScriptBlock = {
                         $ExpectedCount = 1
                         Write-Log "Single-part archive detected: $BaseName" -Type "Info"
                     } else {
-                        $UnknownVolumeCountSince.Remove($BaseName)
+                        $LastPartProgressAt.Remove($BaseName)
+                        $LastPartFingerprint.Remove($BaseName)
                         $UnknownVolumeCountAlerted.Remove($BaseName)
                     }
 

@@ -911,7 +911,13 @@ $StagerScriptBlock = {
 
     while (-not $Sync.StopRequested) {
         try {
-            $Candidates = @(Get-ChildItem -Path $PreStagePath -File -ErrorAction SilentlyContinue |
+            # -Recurse: some upload/sync tools land files in a subfolder per
+            # batch/session rather than directly in Pre-Stage. Every candidate is
+            # flattened into Inbound by filename below regardless of how deep it
+            # was nested, so this is safe - the source subfolder is left in place
+            # (untouched, not deleted) once emptied, in case whatever created it
+            # expects it to still exist.
+            $Candidates = @(Get-ChildItem -Path $PreStagePath -File -Recurse -ErrorAction SilentlyContinue |
                             Where-Object { Test-QualifiesForStaging $_ })
 
             foreach ($File in $Candidates) {

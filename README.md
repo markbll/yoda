@@ -67,6 +67,14 @@ parts arriving over time. If a file with the same name already exists in
 Inbound, the pre-stage copy is left alone and a warning is logged rather
 than overwriting anything.
 
+**Also look in subfolders of Pre-Stage** (checked by default): some upload
+or sync tools land files in a subfolder per batch/session rather than
+directly in Pre-Stage. When checked, those are found too and flattened
+into Inbound by filename, regardless of nesting depth - the subfolder
+itself is left in place, never deleted, in case whatever created it
+expects to reuse it. Uncheck to only watch the Pre-Stage folder's top
+level.
+
 ### Requirements
 
 - Windows PowerShell 5.1+ (or PowerShell 7+ on Windows) - WinForms only

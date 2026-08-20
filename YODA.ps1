@@ -144,6 +144,7 @@ function Get-DefaultConfig {
     [PSCustomObject]@{
         BasePath                  = "C:\yoda"
         PreStagePath              = ""
+        PreStageRecurseSubfolders = $true
         InboundPath               = "C:\yoda\inbound"
         ExtractedPath             = "C:\yoda\extracted"
         SevenZipPath              = "C:\Program Files\7-Zip\7z.exe"
@@ -839,6 +840,7 @@ $StagerScriptBlock = {
         [string]$PreStagePath,
         [string]$InboundPath,
         [int]$ScanIntervalSeconds,
+        [bool]$RecurseSubfolders,
         $Sync
     )
 
@@ -911,13 +913,13 @@ $StagerScriptBlock = {
 
     while (-not $Sync.StopRequested) {
         try {
-            # -Recurse: some upload/sync tools land files in a subfolder per
-            # batch/session rather than directly in Pre-Stage. Every candidate is
-            # flattened into Inbound by filename below regardless of how deep it
-            # was nested, so this is safe - the source subfolder is left in place
-            # (untouched, not deleted) once emptied, in case whatever created it
-            # expects it to still exist.
-            $Candidates = @(Get-ChildItem -Path $PreStagePath -File -Recurse -ErrorAction SilentlyContinue |
+            # RecurseSubfolders (GUI checkbox): some upload/sync tools land files
+            # in a subfolder per batch/session rather than directly in Pre-Stage.
+            # Every candidate is flattened into Inbound by filename below
+            # regardless of how deep it was nested, so this is safe - the source
+            # subfolder is left in place (untouched, not deleted) once emptied,
+            # in case whatever created it expects it to still exist.
+            $Candidates = @(Get-ChildItem -Path $PreStagePath -File -Recurse:$RecurseSubfolders -ErrorAction SilentlyContinue |
                             Where-Object { Test-QualifiesForStaging $_ })
 
             foreach ($File in $Candidates) {
@@ -966,8 +968,8 @@ $StagerScriptBlock = {
 
 $Form = New-Object System.Windows.Forms.Form
 $Form.Text = "YODA v$YodaGuiVersion"
-$Form.Size = New-Object System.Drawing.Size(950, 800)
-$Form.MinimumSize = New-Object System.Drawing.Size(860, 700)
+$Form.Size = New-Object System.Drawing.Size(950, 832)
+$Form.MinimumSize = New-Object System.Drawing.Size(860, 732)
 $Form.StartPosition = "CenterScreen"
 $Form.BackColor = [System.Drawing.Color]::FromArgb(30, 30, 30)
 $Form.ForeColor = [System.Drawing.Color]::White
@@ -1015,7 +1017,7 @@ function New-FormButton {
 $grpPaths = New-Object System.Windows.Forms.GroupBox
 $grpPaths.Text = "Folders"
 $grpPaths.Location = New-Object System.Drawing.Point(15, 15)
-$grpPaths.Size = New-Object System.Drawing.Size(900, 165)
+$grpPaths.Size = New-Object System.Drawing.Size(900, 197)
 $grpPaths.ForeColor = [System.Drawing.Color]::White
 
 $lblBase = New-FormLabel "Base path:" 15 28 90
@@ -1026,21 +1028,30 @@ $lblPreStage = New-FormLabel "Pre-stage:" 15 60 90
 $txtPreStage = New-FormTextBox 110 57 580 $Config.PreStagePath
 $btnBrowsePreStage = New-FormButton "Browse..." 700 56 90
 
-$lblInbound = New-FormLabel "Inbound:" 15 92 90
-$txtInbound = New-FormTextBox 110 89 580 $Config.InboundPath
-$btnBrowseInbound = New-FormButton "Browse..." 700 88 90
+$chkPreStageRecurse = New-Object System.Windows.Forms.CheckBox
+$chkPreStageRecurse.Text = "Also look in subfolders of Pre-Stage"
+$chkPreStageRecurse.Location = New-Object System.Drawing.Point(110, 88)
+$chkPreStageRecurse.Size = New-Object System.Drawing.Size(300, 22)
+$chkPreStageRecurse.Checked = [bool]$Config.PreStageRecurseSubfolders
+$chkPreStageRecurse.ForeColor = [System.Drawing.Color]::White
 
-$lblExtracted = New-FormLabel "Extracted:" 15 124 90
-$txtExtracted = New-FormTextBox 110 121 580 $Config.ExtractedPath
-$btnBrowseExtracted = New-FormButton "Browse..." 700 120 90
+$lblInbound = New-FormLabel "Inbound:" 15 124 90
+$txtInbound = New-FormTextBox 110 121 580 $Config.InboundPath
+$btnBrowseInbound = New-FormButton "Browse..." 700 120 90
+
+$lblExtracted = New-FormLabel "Extracted:" 15 156 90
+$txtExtracted = New-FormTextBox 110 153 580 $Config.ExtractedPath
+$btnBrowseExtracted = New-FormButton "Browse..." 700 152 90
 
 $toolTip = New-Object System.Windows.Forms.ToolTip
 $toolTip.SetToolTip($txtPreStage, "Optional. Files dropped here by another process (downloader, FTP, etc.) are moved into Inbound once they are fully written. Leave blank to disable.")
 $toolTip.SetToolTip($lblPreStage, "Optional. Files dropped here by another process (downloader, FTP, etc.) are moved into Inbound once they are fully written. Leave blank to disable.")
+$toolTip.SetToolTip($chkPreStageRecurse, "When checked, files in subfolders of Pre-Stage (e.g. a per-batch folder some upload tools create) are found too and flattened into Inbound. The subfolder itself is left in place, never deleted.")
 
 $grpPaths.Controls.AddRange(@(
     $lblBase, $txtBase, $btnBrowseBase,
     $lblPreStage, $txtPreStage, $btnBrowsePreStage,
+    $chkPreStageRecurse,
     $lblInbound, $txtInbound, $btnBrowseInbound,
     $lblExtracted, $txtExtracted, $btnBrowseExtracted
 ))
@@ -1048,7 +1059,7 @@ $grpPaths.Controls.AddRange(@(
 # --- Engine settings group ---
 $grpEngine = New-Object System.Windows.Forms.GroupBox
 $grpEngine.Text = "Engine Settings"
-$grpEngine.Location = New-Object System.Drawing.Point(15, 190)
+$grpEngine.Location = New-Object System.Drawing.Point(15, 222)
 $grpEngine.Size = New-Object System.Drawing.Size(900, 140)
 $grpEngine.ForeColor = [System.Drawing.Color]::White
 
@@ -1122,20 +1133,20 @@ $grpEngine.Controls.AddRange(@(
 ))
 
 # --- Action buttons ---
-$btnStart = New-FormButton "Start" 15 340 110 32
+$btnStart = New-FormButton "Start" 15 372 110 32
 $btnStart.BackColor = [System.Drawing.Color]::FromArgb(40, 90, 40)
 $btnStart.ForeColor = [System.Drawing.Color]::White
 
-$btnStop = New-FormButton "Stop" 135 340 110 32
+$btnStop = New-FormButton "Stop" 135 372 110 32
 $btnStop.BackColor = [System.Drawing.Color]::FromArgb(90, 40, 40)
 $btnStop.ForeColor = [System.Drawing.Color]::White
 $btnStop.Enabled = $false
 
-$btnOpenPreStage = New-FormButton "Open Pre-Stage" 265 342 130 28
-$btnOpenInbound = New-FormButton "Open Inbound" 405 342 120 28
-$btnOpenExtracted = New-FormButton "Open Extracted" 535 342 120 28
-$btnOpenLogs = New-FormButton "Open Logs" 665 342 100 28
-$btnClearLog = New-FormButton "Clear Log" 775 342 120 28
+$btnOpenPreStage = New-FormButton "Open Pre-Stage" 265 374 130 28
+$btnOpenInbound = New-FormButton "Open Inbound" 405 374 120 28
+$btnOpenExtracted = New-FormButton "Open Extracted" 535 374 120 28
+$btnOpenLogs = New-FormButton "Open Logs" 665 374 100 28
+$btnClearLog = New-FormButton "Clear Log" 775 374 120 28
 
 # --- Status strip ---
 $statusStrip = New-Object System.Windows.Forms.StatusStrip
@@ -1163,7 +1174,7 @@ $statusStrip.Items.AddRange(@($lblState, $lblCycle, $lblCompleted, $lblWaiting, 
 
 # --- Log view ---
 $rtbLog = New-Object System.Windows.Forms.RichTextBox
-$rtbLog.Location = New-Object System.Drawing.Point(15, 380)
+$rtbLog.Location = New-Object System.Drawing.Point(15, 412)
 $rtbLog.Size = New-Object System.Drawing.Size(900, 300)
 $rtbLog.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right
 $rtbLog.ReadOnly = $true
@@ -1186,6 +1197,7 @@ function Save-CurrentConfig {
     $cfg = [PSCustomObject]@{
         BasePath                  = $txtBase.Text
         PreStagePath              = $txtPreStage.Text
+        PreStageRecurseSubfolders = $chkPreStageRecurse.Checked
         InboundPath               = $txtInbound.Text
         ExtractedPath             = $txtExtracted.Text
         SevenZipPath              = $txt7z.Text
@@ -1204,7 +1216,7 @@ function Save-CurrentConfig {
 function Set-InputsEnabled {
     param([bool]$Enabled)
     foreach ($ctrl in @($txtBase, $txtPreStage, $txtInbound, $txtExtracted, $txt7z, $numInterval, $numEmptyCycles, $numStagerInterval,
-                        $chkTheme, $chkArt, $chkQuotes, $chkBeeps, $chkGreenText,
+                        $chkTheme, $chkArt, $chkQuotes, $chkBeeps, $chkGreenText, $chkPreStageRecurse,
                         $btnBrowseBase, $btnBrowsePreStage, $btnBrowseInbound, $btnBrowseExtracted, $btnBrowse7z)) {
         $ctrl.Enabled = $Enabled
     }
@@ -1391,6 +1403,7 @@ $btnStart.Add_Click({
             PreStagePath        = $preStagePath
             InboundPath         = $inboundPath
             ScanIntervalSeconds = [int]$numStagerInterval.Value
+            RecurseSubfolders   = $chkPreStageRecurse.Checked
             Sync                = $Sync
         })
         $script:StagerAsync = $script:StagerPS.BeginInvoke()

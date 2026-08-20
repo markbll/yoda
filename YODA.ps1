@@ -1,6 +1,6 @@
 <#
     YODA.ps1
-    Version 4.9
+    Version 5.0
 
     A Windows Forms GUI for YODA - the watch-folder 7-Zip/ZIP
     split-archive extractor scripts bundled in Yoda_The_Unzipper-main.zip.
@@ -16,7 +16,7 @@
         powershell.exe -ExecutionPolicy Bypass -File YODA.ps1
 #>
 
-$YodaGuiVersion = "4.9"
+$YodaGuiVersion = "5.0"
 
 # WinForms requires a Single Threaded Apartment. Relaunch under -STA if needed.
 if ([System.Threading.Thread]::CurrentThread.GetApartmentState() -ne 'STA') {

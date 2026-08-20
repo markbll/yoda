@@ -147,6 +147,7 @@ function Get-DefaultConfig {
         PreStageRecurseSubfolders = $true
         InboundPath               = "C:\yoda\inbound"
         ExtractedPath             = "C:\yoda\extracted"
+        CompletedPath             = "C:\yoda\completed"
         SevenZipPath              = "C:\Program Files\7-Zip\7z.exe"
         CheckIntervalSeconds      = 30
         EmptyCyclesBeforeRestart  = 10
@@ -225,6 +226,7 @@ $EngineScriptBlock = {
         [string]$BasePath,
         [string]$InboundPath,
         [string]$ExtractedPath,
+        [string]$CompletedPath,
         [string]$SevenZipPath,
         [int]$CheckIntervalSeconds,
         [int]$EmptyCyclesBeforeRestart,
@@ -586,6 +588,38 @@ $EngineScriptBlock = {
         }
     }
 
+    # Relocates the actual unzipped output (not the RAW originals, which stay
+    # under Extracted) into the Completed folder once extraction has fully
+    # succeeded. A failure here is logged but never changes the archive's
+    # "completed" status or triggers a re-extraction - the content is already
+    # correctly extracted, it just didn't finish relocating.
+    function Move-ExtractedToCompleted {
+        param([string]$SourcePath, [string]$CompletedPath)
+        try {
+            if (-not (Test-Path $CompletedPath)) {
+                New-Item -ItemType Directory -Path $CompletedPath -Force | Out-Null
+                Write-Log "Created Completed folder: $CompletedPath" -Type "Info"
+            }
+
+            $FolderName = Split-Path $SourcePath -Leaf
+            $Destination = Join-Path -Path $CompletedPath -ChildPath $FolderName
+
+            if (Test-Path $Destination) {
+                Write-Log "Cannot move to Completed - '$FolderName' already exists there: $Destination" -Type "Error"
+                Write-ErrorDetailsLog "Move-ExtractedToCompleted" $FolderName "Destination Collision" "Extracted content left in place at $SourcePath"
+                return $false
+            }
+
+            Move-Item -Path $SourcePath -Destination $Destination -ErrorAction Stop
+            Write-Log "Moved extracted content to Completed: $Destination" -Type "Success"
+            return $true
+        } catch {
+            Write-Log "Failed to move extracted content to Completed: $_" -Type "Error"
+            Write-ErrorDetailsLog "Move-ExtractedToCompleted" (Split-Path $SourcePath -Leaf) "Move Failed" $_
+            return $false
+        }
+    }
+
     function Wait-NextCycle {
         param([int]$Seconds)
         if ($EnableYodaQuotes) { Write-Log $YodaQuotes['Waiting'] -Type "Info" }
@@ -622,10 +656,10 @@ $EngineScriptBlock = {
     }
 
     Write-Log "May the Force be with you..." -Type "Info"
-    Write-Log "Base: $BasePath | Inbound: $InboundPath | Extracted: $ExtractedPath" -Type "Info"
+    Write-Log "Base: $BasePath | Inbound: $InboundPath | Extracted: $ExtractedPath | Completed: $CompletedPath" -Type "Info"
     Write-Log "Check interval: $CheckIntervalSeconds s | Self-heal after $EmptyCyclesBeforeRestart empty cycles" -Type "Info"
 
-    foreach ($Dir in @($InboundPath, $ExtractedPath, $LogFolder)) {
+    foreach ($Dir in @($InboundPath, $ExtractedPath, $CompletedPath, $LogFolder)) {
         try {
             if (-not (Test-Path $Dir)) {
                 New-Item -ItemType Directory -Path $Dir -Force | Out-Null
@@ -779,6 +813,7 @@ $EngineScriptBlock = {
                     if ($ExtractionResult) {
                         Write-Log "Extraction successful. Moving archive files to RAW folder..." -Type "Success"
                         Move-ArchiveFiles -BaseName $BaseName -SourcePath $InboundPath -DestinationParent $ArchiveExtractPath
+                        [void](Move-ExtractedToCompleted -SourcePath $ExtractionResult -CompletedPath $CompletedPath)
                         $ProcessedArchives[$BaseName] = "completed"
                         $ProcessedThisCycle++
                         if ($EnableThemeBeeps) { try { [Console]::Beep(600, 200); [Console]::Beep(600, 200) } catch { } }
@@ -968,8 +1003,8 @@ $StagerScriptBlock = {
 
 $Form = New-Object System.Windows.Forms.Form
 $Form.Text = "YODA v$YodaGuiVersion"
-$Form.Size = New-Object System.Drawing.Size(950, 832)
-$Form.MinimumSize = New-Object System.Drawing.Size(860, 732)
+$Form.Size = New-Object System.Drawing.Size(950, 934)
+$Form.MinimumSize = New-Object System.Drawing.Size(860, 834)
 $Form.StartPosition = "CenterScreen"
 $Form.BackColor = [System.Drawing.Color]::FromArgb(30, 30, 30)
 $Form.ForeColor = [System.Drawing.Color]::White
@@ -1017,7 +1052,7 @@ function New-FormButton {
 $grpPaths = New-Object System.Windows.Forms.GroupBox
 $grpPaths.Text = "Folders"
 $grpPaths.Location = New-Object System.Drawing.Point(15, 15)
-$grpPaths.Size = New-Object System.Drawing.Size(900, 197)
+$grpPaths.Size = New-Object System.Drawing.Size(900, 229)
 $grpPaths.ForeColor = [System.Drawing.Color]::White
 
 $lblBase = New-FormLabel "Base path:" 15 28 90
@@ -1043,23 +1078,30 @@ $lblExtracted = New-FormLabel "Extracted:" 15 156 90
 $txtExtracted = New-FormTextBox 110 153 580 $Config.ExtractedPath
 $btnBrowseExtracted = New-FormButton "Browse..." 700 152 90
 
+$lblCompleted = New-FormLabel "Completed:" 15 188 90
+$txtCompleted = New-FormTextBox 110 185 580 $Config.CompletedPath
+$btnBrowseCompleted = New-FormButton "Browse..." 700 184 90
+
 $toolTip = New-Object System.Windows.Forms.ToolTip
 $toolTip.SetToolTip($txtPreStage, "Optional. Files dropped here by another process (downloader, FTP, etc.) are moved into Inbound once they are fully written. Leave blank to disable.")
 $toolTip.SetToolTip($lblPreStage, "Optional. Files dropped here by another process (downloader, FTP, etc.) are moved into Inbound once they are fully written. Leave blank to disable.")
 $toolTip.SetToolTip($chkPreStageRecurse, "When checked, files in subfolders of Pre-Stage (e.g. a per-batch folder some upload tools create) are found too and flattened into Inbound. The subfolder itself is left in place, never deleted.")
+$toolTip.SetToolTip($txtCompleted, "Once an archive extracts successfully, its unzipped output is moved here. The original archive parts stay under Extracted\<name>\RAW - only the extracted content relocates.")
+$toolTip.SetToolTip($lblCompleted, "Once an archive extracts successfully, its unzipped output is moved here. The original archive parts stay under Extracted\<name>\RAW - only the extracted content relocates.")
 
 $grpPaths.Controls.AddRange(@(
     $lblBase, $txtBase, $btnBrowseBase,
     $lblPreStage, $txtPreStage, $btnBrowsePreStage,
     $chkPreStageRecurse,
     $lblInbound, $txtInbound, $btnBrowseInbound,
-    $lblExtracted, $txtExtracted, $btnBrowseExtracted
+    $lblExtracted, $txtExtracted, $btnBrowseExtracted,
+    $lblCompleted, $txtCompleted, $btnBrowseCompleted
 ))
 
 # --- Engine settings group ---
 $grpEngine = New-Object System.Windows.Forms.GroupBox
 $grpEngine.Text = "Engine Settings"
-$grpEngine.Location = New-Object System.Drawing.Point(15, 222)
+$grpEngine.Location = New-Object System.Drawing.Point(15, 254)
 $grpEngine.Size = New-Object System.Drawing.Size(900, 140)
 $grpEngine.ForeColor = [System.Drawing.Color]::White
 
@@ -1133,20 +1175,21 @@ $grpEngine.Controls.AddRange(@(
 ))
 
 # --- Action buttons ---
-$btnStart = New-FormButton "Start" 15 372 110 32
+$btnStart = New-FormButton "Start" 15 404 110 32
 $btnStart.BackColor = [System.Drawing.Color]::FromArgb(40, 90, 40)
 $btnStart.ForeColor = [System.Drawing.Color]::White
 
-$btnStop = New-FormButton "Stop" 135 372 110 32
+$btnStop = New-FormButton "Stop" 135 404 110 32
 $btnStop.BackColor = [System.Drawing.Color]::FromArgb(90, 40, 40)
 $btnStop.ForeColor = [System.Drawing.Color]::White
 $btnStop.Enabled = $false
 
-$btnOpenPreStage = New-FormButton "Open Pre-Stage" 265 374 130 28
-$btnOpenInbound = New-FormButton "Open Inbound" 405 374 120 28
-$btnOpenExtracted = New-FormButton "Open Extracted" 535 374 120 28
-$btnOpenLogs = New-FormButton "Open Logs" 665 374 100 28
-$btnClearLog = New-FormButton "Clear Log" 775 374 120 28
+$btnOpenPreStage = New-FormButton "Open Pre-Stage" 15 444 120 28
+$btnOpenInbound = New-FormButton "Open Inbound" 145 444 110 28
+$btnOpenExtracted = New-FormButton "Open Extracted" 265 444 110 28
+$btnOpenCompleted = New-FormButton "Open Completed" 385 444 120 28
+$btnOpenLogs = New-FormButton "Open Logs" 515 444 90 28
+$btnClearLog = New-FormButton "Clear Log" 615 444 100 28
 
 # --- Status strip ---
 $statusStrip = New-Object System.Windows.Forms.StatusStrip
@@ -1174,7 +1217,7 @@ $statusStrip.Items.AddRange(@($lblState, $lblCycle, $lblCompleted, $lblWaiting, 
 
 # --- Log view ---
 $rtbLog = New-Object System.Windows.Forms.RichTextBox
-$rtbLog.Location = New-Object System.Drawing.Point(15, 412)
+$rtbLog.Location = New-Object System.Drawing.Point(15, 482)
 $rtbLog.Size = New-Object System.Drawing.Size(900, 300)
 $rtbLog.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right
 $rtbLog.ReadOnly = $true
@@ -1185,7 +1228,7 @@ $rtbLog.WordWrap = $true
 
 $Form.Controls.AddRange(@(
     $grpPaths, $grpEngine,
-    $btnStart, $btnStop, $btnOpenPreStage, $btnOpenInbound, $btnOpenExtracted, $btnOpenLogs, $btnClearLog,
+    $btnStart, $btnStop, $btnOpenPreStage, $btnOpenInbound, $btnOpenExtracted, $btnOpenCompleted, $btnOpenLogs, $btnClearLog,
     $rtbLog, $statusStrip
 ))
 
@@ -1200,6 +1243,7 @@ function Save-CurrentConfig {
         PreStageRecurseSubfolders = $chkPreStageRecurse.Checked
         InboundPath               = $txtInbound.Text
         ExtractedPath             = $txtExtracted.Text
+        CompletedPath             = $txtCompleted.Text
         SevenZipPath              = $txt7z.Text
         CheckIntervalSeconds      = [int]$numInterval.Value
         EmptyCyclesBeforeRestart  = [int]$numEmptyCycles.Value
@@ -1215,9 +1259,9 @@ function Save-CurrentConfig {
 
 function Set-InputsEnabled {
     param([bool]$Enabled)
-    foreach ($ctrl in @($txtBase, $txtPreStage, $txtInbound, $txtExtracted, $txt7z, $numInterval, $numEmptyCycles, $numStagerInterval,
+    foreach ($ctrl in @($txtBase, $txtPreStage, $txtInbound, $txtExtracted, $txtCompleted, $txt7z, $numInterval, $numEmptyCycles, $numStagerInterval,
                         $chkTheme, $chkArt, $chkQuotes, $chkBeeps, $chkGreenText, $chkPreStageRecurse,
-                        $btnBrowseBase, $btnBrowsePreStage, $btnBrowseInbound, $btnBrowseExtracted, $btnBrowse7z)) {
+                        $btnBrowseBase, $btnBrowsePreStage, $btnBrowseInbound, $btnBrowseExtracted, $btnBrowseCompleted, $btnBrowse7z)) {
         $ctrl.Enabled = $Enabled
     }
 }
@@ -1298,6 +1342,12 @@ $btnBrowseExtracted.Add_Click({
     if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { $txtExtracted.Text = $dlg.SelectedPath }
 })
 
+$btnBrowseCompleted.Add_Click({
+    $dlg = New-Object System.Windows.Forms.FolderBrowserDialog
+    if (Test-PathSafe $txtCompleted.Text) { $dlg.SelectedPath = $txtCompleted.Text }
+    if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { $txtCompleted.Text = $dlg.SelectedPath }
+})
+
 $btnBrowse7z.Add_Click({
     $dlg = New-Object System.Windows.Forms.OpenFileDialog
     $dlg.Filter = "7z.exe|7z.exe|Executable files (*.exe)|*.exe|All files (*.*)|*.*"
@@ -1325,6 +1375,11 @@ $btnOpenExtracted.Add_Click({
     else { [System.Windows.Forms.MessageBox]::Show("Extracted folder does not exist yet.", "YODA") | Out-Null }
 })
 
+$btnOpenCompleted.Add_Click({
+    if (Test-PathSafe $txtCompleted.Text) { Start-Process explorer.exe $txtCompleted.Text }
+    else { [System.Windows.Forms.MessageBox]::Show("Completed folder does not exist yet.", "YODA") | Out-Null }
+})
+
 $btnOpenLogs.Add_Click({
     if ([string]::IsNullOrWhiteSpace($txtBase.Text)) {
         [System.Windows.Forms.MessageBox]::Show("Set a Base path first.", "YODA") | Out-Null
@@ -1344,11 +1399,13 @@ $btnStart.Add_Click({
     $preStagePath = $txtPreStage.Text.Trim()
     $inboundPath = $txtInbound.Text.Trim()
     $extractedPath = $txtExtracted.Text.Trim()
+    $completedPath = $txtCompleted.Text.Trim()
     $sevenZip = $txt7z.Text.Trim()
 
     if ([string]::IsNullOrWhiteSpace($basePath) -or [string]::IsNullOrWhiteSpace($inboundPath) -or
-        [string]::IsNullOrWhiteSpace($extractedPath) -or [string]::IsNullOrWhiteSpace($sevenZip)) {
-        [System.Windows.Forms.MessageBox]::Show("Please fill in Base, Inbound, Extracted and 7-Zip paths.", "YODA") | Out-Null
+        [string]::IsNullOrWhiteSpace($extractedPath) -or [string]::IsNullOrWhiteSpace($completedPath) -or
+        [string]::IsNullOrWhiteSpace($sevenZip)) {
+        [System.Windows.Forms.MessageBox]::Show("Please fill in Base, Inbound, Extracted, Completed and 7-Zip paths.", "YODA") | Out-Null
         return
     }
     if (-not (Test-PathSafe $sevenZip)) {
@@ -1382,6 +1439,7 @@ $btnStart.Add_Click({
         BasePath                 = $basePath
         InboundPath               = $inboundPath
         ExtractedPath             = $extractedPath
+        CompletedPath             = $completedPath
         SevenZipPath              = $sevenZip
         CheckIntervalSeconds      = [int]$numInterval.Value
         EmptyCyclesBeforeRestart  = [int]$numEmptyCycles.Value

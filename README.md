@@ -20,8 +20,8 @@ from `Yoda_Unzipper.ps1` (the most complete revision, with the Star Wars
 theme options). Instead of editing command-line parameters and watching a
 console window, you get:
 
-- Folder pickers for Base / Pre-Stage / Inbound / Extracted paths, plus a
-  7-Zip path field with a browse button.
+- Folder pickers for Base / Pre-Stage / Inbound / Extracted / Completed
+  paths, plus a 7-Zip path field with a browse button.
 - Numeric settings for the scan interval, the empty-cycle self-heal
   threshold, and the pre-stage scan interval.
 - Checkboxes for the Star Wars intro jingle, Yoda ASCII art, Yoda quotes,
@@ -32,9 +32,9 @@ console window, you get:
   showing the current cycle, completed/waiting/failed counts, the
   pre-stage watcher's state and staged-file count, and a countdown to the
   next scan.
-- "Open Pre-Stage / Inbound / Extracted / Logs" shortcuts, and settings
-  are remembered between runs (`yoda_gui_config.json`, written next to the
-  script).
+- "Open Pre-Stage / Inbound / Extracted / Completed / Logs" shortcuts, and
+  settings are remembered between runs (`yoda_gui_config.json`, written
+  next to the script).
 - A borderless splash screen - large Yoda ASCII art and title - shown for
   5 seconds on startup before the main window loads.
 
@@ -74,6 +74,17 @@ into Inbound by filename, regardless of nesting depth - the subfolder
 itself is left in place, never deleted, in case whatever created it
 expects to reuse it. Uncheck to only watch the Pre-Stage folder's top
 level.
+
+### Completed folder
+
+Once an archive extracts successfully, its unzipped output is moved from
+Extracted into the **Completed** folder - the final home for finished
+work, separate from the working area extraction happens in. Only the
+extracted content relocates; the original archive parts stay right where
+they always have, under `Extracted\<name>\RAW`. If the move itself fails
+for some reason (e.g. disk full), that's logged but the archive still
+counts as completed - the content was extracted correctly, it just didn't
+finish relocating, so it is never re-extracted.
 
 ### Requirements
 

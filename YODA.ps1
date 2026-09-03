@@ -419,7 +419,15 @@ $EngineScriptBlock = {
             foreach ($Line in $ListOutput) {
                 if ($Line -match "Volumes\s*=\s*(\d+)") {
                     $VolumeCount = [int]$matches[1]
-                    Write-Log "Archive has $VolumeCount volume(s)" -Type "Info"
+                    # This is the single most important number in the whole
+                    # pipeline - everything downstream (are all parts present,
+                    # does extraction proceed) hinges on 7-Zip's own claim
+                    # here being correct. Log the raw lines it came from, not
+                    # just the parsed number, so if 7-Zip is ever wrong about
+                    # this on some archive/environment, there's direct
+                    # evidence in the log instead of a bare figure to doubt.
+                    $SizeLine = ($ListOutput | Where-Object { $_ -match '^(Physical Size|Total Physical Size)\s*=' }) -join ' | '
+                    Write-Log "Archive has $VolumeCount volume(s) (source: $(Split-Path $FilePath -Leaf)) [$SizeLine]" -Type "Info"
                     return $VolumeCount
                 }
             }

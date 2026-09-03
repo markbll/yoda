@@ -519,13 +519,21 @@ $EngineScriptBlock = {
         Write-Log "Testing archive integrity: $FileName" -Type "Info"
         try {
             $TestOutput = @(& $SevenZipPath t $FilePath 2>&1)
-            if ($LASTEXITCODE -eq 0) {
+            $OutputText = $TestOutput | Out-String
+            # Never trust exit code alone for something this consequential -
+            # cross-check against 7-Zip's own explicit textual verdict too.
+            # "Everything is Ok" is the one line 7z only ever prints after a
+            # fully successful test; any error banner (still checked even if
+            # exit code somehow came back 0) means it isn't really a pass.
+            $SaysOk = $OutputText -match 'Everything is Ok'
+            $SaysError = $OutputText -match 'Unexpected end of archive|Data Error|CRC Failed|Headers Error|Can''t open as archive|ERRORS?:'
+            if ($LASTEXITCODE -eq 0 -and $SaysOk -and -not $SaysError) {
                 Write-Log "Archive integrity test PASSED: $FileName" -Type "Success"
                 return $true
             } else {
-                Write-Log "Archive integrity test FAILED: $FileName" -Type "Error"
+                Write-Log "Archive integrity test FAILED: $FileName (exit=$LASTEXITCODE, saysOk=$SaysOk, saysError=$SaysError)" -Type "Error"
                 $BaseName = $FileName -replace '\.\d{3}$', '' -replace '\.zip$', '' -replace '\.7z$', ''
-                Write-FailedArchiveLog $BaseName "Integrity Test Failed" ($TestOutput | Out-String)
+                Write-FailedArchiveLog $BaseName "Integrity Test Failed" $OutputText
                 $script:ErrorCount++
                 return $false
             }
@@ -554,13 +562,24 @@ $EngineScriptBlock = {
 
             Write-Log "Extracting archive to: $FinalDestination" -Type "Info"
             $ExtractOutput = @(& $SevenZipPath x $FirstPartPath "-o$FinalDestination" 2>&1)
+            $OutputText = $ExtractOutput | Out-String
+            # Same double-check as Test-ArchiveIntegrity: exit code AND the
+            # explicit "Everything is Ok" text, AND no error banner present.
+            $SaysOk = $OutputText -match 'Everything is Ok'
+            $SaysError = $OutputText -match 'Unexpected end of archive|Data Error|CRC Failed|Headers Error|Can''t open as archive|ERRORS?:'
 
-            if ($LASTEXITCODE -eq 0) {
+            if ($LASTEXITCODE -eq 0 -and $SaysOk -and -not $SaysError) {
                 Write-Log "Archive extraction completed successfully: $ArchiveName" -Type "Success"
                 return $FinalDestination
             } else {
-                Write-Log "Archive extraction FAILED: $ArchiveName" -Type "Error"
-                Write-FailedArchiveLog $ArchiveName "Extraction Failed" ($ExtractOutput | Out-String)
+                Write-Log "Archive extraction FAILED: $ArchiveName (exit=$LASTEXITCODE, saysOk=$SaysOk, saysError=$SaysError)" -Type "Error"
+                Write-FailedArchiveLog $ArchiveName "Extraction Failed" $OutputText
+                # A failed extraction can still leave partial output behind on
+                # disk (7z writes files as it goes) - never let a half-written
+                # extraction pass as this archive's result on a later retry.
+                if (Test-Path $FinalDestination) {
+                    try { Remove-Item -Path $FinalDestination -Recurse -Force -ErrorAction Stop } catch { }
+                }
                 $script:ErrorCount++
                 return $null
             }

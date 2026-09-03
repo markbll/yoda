@@ -373,6 +373,21 @@ $EngineScriptBlock = {
         return $Safe
     }
 
+    # Single source of truth for "which archive does this file belong to",
+    # used everywhere a file needs to be matched back to its BaseName. Every
+    # caller MUST compare with -eq against this, never with a -like "prefix*"
+    # wildcard - a wildcard also matches a completely different archive whose
+    # name simply starts with the same text (e.g. BaseName "Report" would
+    # wildcard-match "ReportQ2.7z.001"), silently pulling unrelated files into
+    # this archive's part count and, worse, into its RAW move.
+    function Get-PartBaseName {
+        param([string]$FileName)
+        $BaseName = $FileName -replace '\.\d{3}$', ''
+        $BaseName = $BaseName -replace '\.zip$', ''
+        $BaseName = $BaseName -replace '\.7z$', ''
+        return $BaseName
+    }
+
     function Get-ArchiveGroups {
         param([string]$Path)
         try {
@@ -381,9 +396,7 @@ $EngineScriptBlock = {
             if ($Files.Count -eq 0) { return @{} }
             $Groups = @{}
             foreach ($File in $Files) {
-                $BaseName = $File.Name -replace '\.\d{3}$', ''
-                $BaseName = $BaseName -replace '\.zip$', ''
-                $BaseName = $BaseName -replace '\.7z$', ''
+                $BaseName = Get-PartBaseName $File.Name
                 if (-not $Groups.ContainsKey($BaseName)) { $Groups[$BaseName] = @() }
                 $Groups[$BaseName] += $File
             }
@@ -444,7 +457,7 @@ $EngineScriptBlock = {
     function Verify-AllPartsPresentAndStable {
         param([string]$BaseName, [string]$SourcePath, [int]$ExpectedCount)
         $PartFiles = @(Get-ChildItem -Path $SourcePath -File -ErrorAction SilentlyContinue |
-                       Where-Object { $_.Name -like "$BaseName*" } | Sort-Object Name)
+                       Where-Object { (Get-PartBaseName $_.Name) -eq $BaseName } | Sort-Object Name)
         $ActualCount = $PartFiles.Count
         Write-Log "Verifying parts for $BaseName : Expected=$ExpectedCount, Found=$ActualCount" -Type "Info"
         if ($ActualCount -lt $ExpectedCount) {
@@ -552,7 +565,7 @@ $EngineScriptBlock = {
     }
 
     function Move-ArchiveFiles {
-        param([string]$BaseName, [string]$SourcePath, [string]$DestinationParent)
+        param([string]$BaseName, [string]$SourcePath, [string]$DestinationParent, [int]$ExpectedCount = 0)
         try {
             $RawFolder = Join-Path -Path $DestinationParent -ChildPath "RAW"
             if (-not (Test-Path $RawFolder)) {
@@ -561,20 +574,28 @@ $EngineScriptBlock = {
             }
 
             $ArchiveFiles = @(Get-ChildItem -Path $SourcePath -File -ErrorAction SilentlyContinue |
-                             Where-Object { $_.Name -like "$BaseName*" })
+                             Where-Object { (Get-PartBaseName $_.Name) -eq $BaseName })
 
             if ($ArchiveFiles.Count -eq 0) {
                 Write-Log "No archive files found to move: $BaseName" -Type "Warning"
-                return
+                return 0
+            }
+
+            if ($ExpectedCount -gt 0 -and $ArchiveFiles.Count -ne $ExpectedCount) {
+                Write-Log "MISMATCH: about to move $($ArchiveFiles.Count) file(s) to RAW for '$BaseName' but the archive was verified with $ExpectedCount part(s) - moving anyway, but investigate this archive's output." -Type "Error"
+                Write-ErrorDetailsLog "Move-ArchiveFiles" $BaseName "Part Count Mismatch" "Expected $ExpectedCount part(s), found $($ArchiveFiles.Count) file(s) matching this BaseName at move time."
+                $script:ErrorCount++
             }
 
             Write-Log "Moving $($ArchiveFiles.Count) archive files to RAW folder..." -Type "Info"
+            $MovedCount = 0
             foreach ($File in $ArchiveFiles) {
                 try {
                     if (Wait-FileStability -FilePath $File.FullName) {
                         $DestPath = Join-Path -Path $RawFolder -ChildPath $File.Name
                         Move-Item -Path $File.FullName -Destination $DestPath -Force -ErrorAction Stop
                         Write-Log "Moved to RAW: $($File.Name)" -Type "Success"
+                        $MovedCount++
                     } else {
                         Write-Log "File still in use, cannot move: $($File.Name)" -Type "Warning"
                     }
@@ -584,6 +605,7 @@ $EngineScriptBlock = {
                     $script:ErrorCount++
                 }
             }
+            return $MovedCount
         } catch {
             Write-Log "Exception in Move-ArchiveFiles: $_" -Type "Error"
             Write-ErrorDetailsLog "Move-ArchiveFiles" $BaseName "Exception" $_
@@ -814,7 +836,7 @@ $EngineScriptBlock = {
 
                     if ($ExtractionResult) {
                         Write-Log "Extraction successful. Moving archive files to RAW folder..." -Type "Success"
-                        Move-ArchiveFiles -BaseName $BaseName -SourcePath $InboundPath -DestinationParent $ArchiveExtractPath
+                        [void](Move-ArchiveFiles -BaseName $BaseName -SourcePath $InboundPath -DestinationParent $ArchiveExtractPath -ExpectedCount $ExpectedCount)
                         [void](Move-ExtractedToCompleted -SourcePath $ExtractionResult -CompletedPath $CompletedPath)
                         $ProcessedArchives[$BaseName] = "completed"
                         $ProcessedThisCycle++

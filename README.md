@@ -25,7 +25,8 @@ console window, you get:
 - Numeric settings for the scan interval, the empty-cycle self-heal
   threshold, and the pre-stage scan interval.
 - Checkboxes for the Star Wars intro jingle, Yoda ASCII art, Yoda quotes,
-  and theme beeps.
+  theme beeps, MD5-hashing extracted files, MD5-hashing archive parts,
+  and the success banner popup.
 - Start / Stop buttons that run the extractor engine (and, if configured,
   the pre-stage watcher) on background threads, so the window never freezes.
 - A live, color-coded log (Info/Success/Warning/Error) and a status bar
@@ -85,6 +86,32 @@ they always have, under `Extracted\<name>\RAW`. If the move itself fails
 for some reason (e.g. disk full), that's logged but the archive still
 counts as completed - the content was extracted correctly, it just didn't
 finish relocating, so it is never re-extracted.
+
+### MD5 hash manifests
+
+Two independent checkboxes control MD5 verification of a completed
+extraction, both on by default:
+
+- **MD5 hash extracted files** - writes `MD5_Hashes.txt` into the
+  extracted output folder (so it travels with the content into
+  Completed), one line per file in standard `md5sum`-compatible format
+  (`HASH *relative\path`).
+- **MD5 hash archive parts** - writes `MD5_Hashes_Parts.txt` into the
+  `RAW` folder, one line per original archive part (`.001`, `.002`, ...).
+
+Either can be turned off if the extra pass over the files isn't wanted;
+a failure to hash never fails the extraction itself, it's just logged.
+
+### Success banner and sound
+
+On each archive that completes successfully, YODA (if the theme beeps
+checkbox is on) plays a short original completion chime, and (if **Show
+success banner popup** is checked, on by default) shows a green
+notification in the corner of the screen naming the archive, its final
+destination, and how many files were extracted. The banner is purely
+informational - it never blocks the engine or requires a click, and
+closes itself after a few seconds. Several archives finishing close
+together stack their banners rather than overlapping.
 
 ### Requirements
 

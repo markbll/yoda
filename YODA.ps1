@@ -158,6 +158,9 @@ function Get-DefaultConfig {
         EnableYodaQuotes          = $true
         EnableThemeBeeps          = $true
         EnableGreenText           = $true
+        HashExtractedFiles        = $true
+        HashArchiveParts          = $true
+        ShowSuccessBanner         = $true
     }
 }
 
@@ -187,6 +190,7 @@ $Config = Import-GuiConfig
 
 $Sync = [hashtable]::Synchronized(@{
     LogQueue      = [System.Collections.Concurrent.ConcurrentQueue[object]]::new()
+    SuccessQueue  = [System.Collections.Concurrent.ConcurrentQueue[object]]::new()
     StopRequested = $false
     State         = "Idle"
     Cycle         = 0
@@ -236,6 +240,8 @@ $EngineScriptBlock = {
         [bool]$EnableYodaQuotes,
         [bool]$EnableThemeBeeps,
         [bool]$EnableGreenText,
+        [bool]$HashExtractedFiles,
+        [bool]$HashArchiveParts,
         $Sync
     )
 
@@ -671,6 +677,37 @@ $EngineScriptBlock = {
         }
     }
 
+    # Writes one MD5 line per file under $RootPath into $OutputFile, in the
+    # classic "hash *relativepath" format (the same layout md5sum produces),
+    # so the result can be checked with a standard md5sum -c on either side.
+    # Used both for the extracted output and for the RAW archive parts -
+    # $Label just distinguishes which one shows up in the log.
+    function Write-HashManifest {
+        param([string]$RootPath, [string]$OutputFile, [string]$Label)
+        try {
+            $Files = @(Get-ChildItem -Path $RootPath -File -Recurse -ErrorAction SilentlyContinue |
+                       Where-Object { $_.FullName -ne $OutputFile })
+            if ($Files.Count -eq 0) {
+                Write-Log "$Label hash manifest skipped - no files found under $RootPath" -Type "Warning"
+                return
+            }
+            $Lines = foreach ($File in $Files) {
+                try {
+                    $Hash = (Get-FileHash -Path $File.FullName -Algorithm MD5 -ErrorAction Stop).Hash
+                    $RelPath = $File.FullName.Substring($RootPath.Length).TrimStart('\', '/')
+                    "$Hash *$RelPath"
+                } catch {
+                    "ERROR *$($File.Name) - $_"
+                }
+            }
+            Set-Content -Path $OutputFile -Value $Lines -Encoding UTF8
+            Write-Log "$Label MD5 hash manifest written: $OutputFile ($($Files.Count) file(s))" -Type "Success"
+        } catch {
+            Write-Log "Failed to write $Label hash manifest: $_" -Type "Error"
+            Write-ErrorDetailsLog "Write-HashManifest" $Label "Exception" $_
+        }
+    }
+
     function Wait-NextCycle {
         param([int]$Seconds)
         if ($EnableYodaQuotes) { Write-Log $YodaQuotes['Waiting'] -Type "Info" }
@@ -694,9 +731,10 @@ $EngineScriptBlock = {
 
     if ($EnableStarWarsTheme -and $EnableThemeBeeps) {
         try {
+            # An original, generic "power-up" tone - not any specific melody -
+            # for the themed startup chime.
             $Notes = @(
-                @{F = 440; D = 500}, @{F = 440; D = 500}, @{F = 440; D = 500}, @{F = 349; D = 350},
-                @{F = 523; D = 150}, @{F = 440; D = 500}, @{F = 349; D = 350}, @{F = 523; D = 150}
+                @{F = 330; D = 120}, @{F = 392; D = 120}, @{F = 494; D = 120}, @{F = 587; D = 260}
             )
             foreach ($Note in $Notes) { [Console]::Beep($Note.F, $Note.D) }
         } catch { }
@@ -863,11 +901,39 @@ $EngineScriptBlock = {
 
                     if ($ExtractionResult) {
                         Write-Log "Extraction successful. Moving archive files to RAW folder..." -Type "Success"
-                        [void](Move-ArchiveFiles -BaseName $BaseName -SourcePath $InboundPath -DestinationParent $ArchiveExtractPath -ExpectedCount $ExpectedCount)
-                        [void](Move-ExtractedToCompleted -SourcePath $ExtractionResult -CompletedPath $CompletedPath)
+
+                        $ExtractedFileCount = @(Get-ChildItem -Path $ExtractionResult -File -Recurse -ErrorAction SilentlyContinue).Count
+
+                        if ($HashExtractedFiles) {
+                            Write-HashManifest -RootPath $ExtractionResult -OutputFile (Join-Path $ExtractionResult "MD5_Hashes.txt") -Label "Extracted files"
+                        }
+
+                        $MovedPartCount = Move-ArchiveFiles -BaseName $BaseName -SourcePath $InboundPath -DestinationParent $ArchiveExtractPath -ExpectedCount $ExpectedCount
+
+                        if ($HashArchiveParts) {
+                            $RawFolder = Join-Path -Path $ArchiveExtractPath -ChildPath "RAW"
+                            if (Test-Path $RawFolder) {
+                                Write-HashManifest -RootPath $RawFolder -OutputFile (Join-Path $RawFolder "MD5_Hashes_Parts.txt") -Label "Archive parts"
+                            }
+                        }
+
+                        $MovedToCompleted = Move-ExtractedToCompleted -SourcePath $ExtractionResult -CompletedPath $CompletedPath
+                        $FinalLocation = if ($MovedToCompleted) { Join-Path -Path $CompletedPath -ChildPath (Split-Path $ExtractionResult -Leaf) } else { $ExtractionResult }
+
                         $ProcessedArchives[$BaseName] = "completed"
                         $ProcessedThisCycle++
-                        if ($EnableThemeBeeps) { try { [Console]::Beep(600, 200); [Console]::Beep(600, 200) } catch { } }
+                        if ($EnableThemeBeeps) {
+                            # Original ascending chime - not any specific melody - for a
+                            # successful-completion alert.
+                            try { foreach ($f in 523, 659, 784, 1046) { [Console]::Beep($f, 130) } } catch { }
+                        }
+                        $Sync.SuccessQueue.Enqueue([PSCustomObject]@{
+                            ArchiveName = $BaseName
+                            Location    = $FinalLocation
+                            FileCount   = $ExtractedFileCount
+                            PartCount   = $MovedPartCount
+                            Timestamp   = Get-Date
+                        })
                         Write-Log "=== Successfully completed: $BaseName ===" -Type "Success"
                     } else {
                         $ProcessedArchives[$BaseName] = "extraction_failed"
@@ -1054,8 +1120,8 @@ $StagerScriptBlock = {
 
 $Form = New-Object System.Windows.Forms.Form
 $Form.Text = "YODA v$YodaGuiVersion"
-$Form.Size = New-Object System.Drawing.Size(950, 934)
-$Form.MinimumSize = New-Object System.Drawing.Size(860, 834)
+$Form.Size = New-Object System.Drawing.Size(950, 962)
+$Form.MinimumSize = New-Object System.Drawing.Size(860, 862)
 $Form.StartPosition = "CenterScreen"
 $Form.BackColor = [System.Drawing.Color]::FromArgb(30, 30, 30)
 $Form.ForeColor = [System.Drawing.Color]::White
@@ -1153,7 +1219,7 @@ $grpPaths.Controls.AddRange(@(
 $grpEngine = New-Object System.Windows.Forms.GroupBox
 $grpEngine.Text = "Engine Settings"
 $grpEngine.Location = New-Object System.Drawing.Point(15, 254)
-$grpEngine.Size = New-Object System.Drawing.Size(900, 140)
+$grpEngine.Size = New-Object System.Drawing.Size(900, 168)
 $grpEngine.ForeColor = [System.Drawing.Color]::White
 
 $lbl7z = New-FormLabel "7-Zip exe:" 15 28 90
@@ -1219,28 +1285,54 @@ $chkGreenText.Size = New-Object System.Drawing.Size(260, 22)
 $chkGreenText.Checked = [bool]$Config.EnableGreenText
 $chkGreenText.ForeColor = [System.Drawing.Color]::White
 
+$chkHashFiles = New-Object System.Windows.Forms.CheckBox
+$chkHashFiles.Text = "MD5 hash extracted files"
+$chkHashFiles.Location = New-Object System.Drawing.Point(15, 128)
+$chkHashFiles.Size = New-Object System.Drawing.Size(200, 22)
+$chkHashFiles.Checked = [bool]$Config.HashExtractedFiles
+$chkHashFiles.ForeColor = [System.Drawing.Color]::White
+
+$chkHashParts = New-Object System.Windows.Forms.CheckBox
+$chkHashParts.Text = "MD5 hash archive parts"
+$chkHashParts.Location = New-Object System.Drawing.Point(225, 128)
+$chkHashParts.Size = New-Object System.Drawing.Size(200, 22)
+$chkHashParts.Checked = [bool]$Config.HashArchiveParts
+$chkHashParts.ForeColor = [System.Drawing.Color]::White
+
+$chkSuccessBanner = New-Object System.Windows.Forms.CheckBox
+$chkSuccessBanner.Text = "Show success banner popup"
+$chkSuccessBanner.Location = New-Object System.Drawing.Point(435, 128)
+$chkSuccessBanner.Size = New-Object System.Drawing.Size(220, 22)
+$chkSuccessBanner.Checked = [bool]$Config.ShowSuccessBanner
+$chkSuccessBanner.ForeColor = [System.Drawing.Color]::White
+
+$toolTip.SetToolTip($chkHashFiles, "After each successful extraction, writes MD5_Hashes.txt into the extracted output folder - one MD5 line per file, in standard md5sum format.")
+$toolTip.SetToolTip($chkHashParts, "After each successful extraction, writes MD5_Hashes_Parts.txt into the RAW folder - one MD5 line per original archive part, in standard md5sum format.")
+$toolTip.SetToolTip($chkSuccessBanner, "Shows a green on-screen banner naming the archive, its destination, and how many files were extracted, for a few seconds, whenever an archive completes successfully. Never blocks the engine - it's informational only.")
+
 $grpEngine.Controls.AddRange(@(
     $lbl7z, $txt7z, $btnBrowse7z,
     $lblInterval, $numInterval, $lblEmptyCycles, $numEmptyCycles, $lblStagerInterval, $numStagerInterval,
-    $chkTheme, $chkArt, $chkQuotes, $chkBeeps, $chkGreenText
+    $chkTheme, $chkArt, $chkQuotes, $chkBeeps, $chkGreenText,
+    $chkHashFiles, $chkHashParts, $chkSuccessBanner
 ))
 
 # --- Action buttons ---
-$btnStart = New-FormButton "Start" 15 404 110 32
+$btnStart = New-FormButton "Start" 15 432 110 32
 $btnStart.BackColor = [System.Drawing.Color]::FromArgb(40, 90, 40)
 $btnStart.ForeColor = [System.Drawing.Color]::White
 
-$btnStop = New-FormButton "Stop" 135 404 110 32
+$btnStop = New-FormButton "Stop" 135 432 110 32
 $btnStop.BackColor = [System.Drawing.Color]::FromArgb(90, 40, 40)
 $btnStop.ForeColor = [System.Drawing.Color]::White
 $btnStop.Enabled = $false
 
-$btnOpenPreStage = New-FormButton "Open Pre-Stage" 15 444 120 28
-$btnOpenInbound = New-FormButton "Open Inbound" 145 444 110 28
-$btnOpenExtracted = New-FormButton "Open Extracted" 265 444 110 28
-$btnOpenCompleted = New-FormButton "Open Completed" 385 444 120 28
-$btnOpenLogs = New-FormButton "Open Logs" 515 444 90 28
-$btnClearLog = New-FormButton "Clear Log" 615 444 100 28
+$btnOpenPreStage = New-FormButton "Open Pre-Stage" 15 472 120 28
+$btnOpenInbound = New-FormButton "Open Inbound" 145 472 110 28
+$btnOpenExtracted = New-FormButton "Open Extracted" 265 472 110 28
+$btnOpenCompleted = New-FormButton "Open Completed" 385 472 120 28
+$btnOpenLogs = New-FormButton "Open Logs" 515 472 90 28
+$btnClearLog = New-FormButton "Clear Log" 615 472 100 28
 
 # --- Status strip ---
 $statusStrip = New-Object System.Windows.Forms.StatusStrip
@@ -1268,7 +1360,7 @@ $statusStrip.Items.AddRange(@($lblState, $lblCycle, $lblCompleted, $lblWaiting, 
 
 # --- Log view ---
 $rtbLog = New-Object System.Windows.Forms.RichTextBox
-$rtbLog.Location = New-Object System.Drawing.Point(15, 482)
+$rtbLog.Location = New-Object System.Drawing.Point(15, 510)
 $rtbLog.Size = New-Object System.Drawing.Size(900, 300)
 $rtbLog.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right
 $rtbLog.ReadOnly = $true
@@ -1304,6 +1396,9 @@ function Save-CurrentConfig {
         EnableYodaQuotes          = $chkQuotes.Checked
         EnableThemeBeeps          = $chkBeeps.Checked
         EnableGreenText           = $chkGreenText.Checked
+        HashExtractedFiles        = $chkHashFiles.Checked
+        HashArchiveParts          = $chkHashParts.Checked
+        ShowSuccessBanner         = $chkSuccessBanner.Checked
     }
     Export-GuiConfig -Config $cfg
 }
@@ -1312,6 +1407,7 @@ function Set-InputsEnabled {
     param([bool]$Enabled)
     foreach ($ctrl in @($txtBase, $txtPreStage, $txtInbound, $txtExtracted, $txtCompleted, $txt7z, $numInterval, $numEmptyCycles, $numStagerInterval,
                         $chkTheme, $chkArt, $chkQuotes, $chkBeeps, $chkGreenText, $chkPreStageRecurse,
+                        $chkHashFiles, $chkHashParts, $chkSuccessBanner,
                         $btnBrowseBase, $btnBrowsePreStage, $btnBrowseInbound, $btnBrowseExtracted, $btnBrowseCompleted, $btnBrowse7z)) {
         $ctrl.Enabled = $Enabled
     }
@@ -1337,6 +1433,72 @@ function Add-LogEntry {
         $rtbLog.SelectionStart = $rtbLog.TextLength
         $rtbLog.ScrollToCaret()
     }
+}
+
+# Tracks how many success banners are currently on screen, so a burst of
+# completions (several archives finishing in the same cycle) stacks them
+# instead of piling up on top of each other.
+$script:OpenBannerCount = 0
+
+# A non-modal, self-closing notification for a completed extraction. Never
+# uses ShowDialog()/MessageBox - this must not block the unattended engine
+# waiting for someone to click OK, so it just appears, stays a few seconds,
+# and closes itself.
+function Show-SuccessBanner {
+    param($Event)
+
+    $banner = New-Object System.Windows.Forms.Form
+    $banner.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::None
+    $banner.StartPosition = "Manual"
+    $banner.Size = New-Object System.Drawing.Size(420, 130)
+    $banner.BackColor = [System.Drawing.Color]::FromArgb(28, 130, 58)
+    $banner.ShowInTaskbar = $false
+    $banner.TopMost = $true
+
+    $workArea = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
+    $x = $workArea.Right - $banner.Width - 20
+    $y = $workArea.Bottom - $banner.Height - 20 - ($script:OpenBannerCount * ($banner.Height + 12))
+    $banner.Location = New-Object System.Drawing.Point($x, $y)
+
+    $banner.Add_Paint({
+        param($s, $e)
+        $pen = New-Object System.Drawing.Pen([System.Drawing.Color]::White, 2)
+        $e.Graphics.DrawRectangle($pen, 1, 1, $s.Width - 3, $s.Height - 3)
+        $pen.Dispose()
+    })
+
+    $lblTitle = New-Object System.Windows.Forms.Label
+    $lblTitle.Text = [char]0x2713 + " Extraction Successful"
+    $lblTitle.Font = New-Object System.Drawing.Font("Segoe UI", 13, [System.Drawing.FontStyle]::Bold)
+    $lblTitle.ForeColor = [System.Drawing.Color]::White
+    $lblTitle.Location = New-Object System.Drawing.Point(14, 10)
+    $lblTitle.Size = New-Object System.Drawing.Size(392, 28)
+
+    $lblDetails = New-Object System.Windows.Forms.Label
+    $PartInfo = if ($Event.PartCount) { " ($($Event.PartCount) part(s))" } else { "" }
+    $lblDetails.Text = "$($Event.ArchiveName)$PartInfo`r`n$($Event.FileCount) file(s) extracted to:`r`n$($Event.Location)"
+    $lblDetails.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+    $lblDetails.ForeColor = [System.Drawing.Color]::White
+    $lblDetails.Location = New-Object System.Drawing.Point(14, 42)
+    $lblDetails.Size = New-Object System.Drawing.Size(392, 78)
+    $lblDetails.AutoEllipsis = $true
+
+    $banner.Controls.AddRange(@($lblTitle, $lblDetails))
+
+    $script:OpenBannerCount++
+    $closeTimer = New-Object System.Windows.Forms.Timer
+    $closeTimer.Interval = 7000
+    $closeTimer.Add_Tick({
+        $closeTimer.Stop()
+        $script:OpenBannerCount--
+        if ($script:OpenBannerCount -lt 0) { $script:OpenBannerCount = 0 }
+        $banner.Close()
+        $banner.Dispose()
+    }.GetNewClosure())
+    $banner.Add_FormClosed({ try { $closeTimer.Stop(); $closeTimer.Dispose() } catch { } }.GetNewClosure())
+    $closeTimer.Start()
+
+    $banner.Show()
 }
 
 function Stop-Engine {
@@ -1499,6 +1661,8 @@ $btnStart.Add_Click({
         EnableYodaQuotes          = $chkQuotes.Checked
         EnableThemeBeeps          = $chkBeeps.Checked
         EnableGreenText           = $chkGreenText.Checked
+        HashExtractedFiles        = $chkHashFiles.Checked
+        HashArchiveParts          = $chkHashParts.Checked
         Sync                      = $Sync
     })
     $script:EngineAsync = $script:EnginePS.BeginInvoke()
@@ -1541,6 +1705,11 @@ $tmrPoll.Add_Tick({
         Add-LogEntry -Entry $dummy
         $drained++
         if ($drained -ge 200) { break }
+    }
+
+    $successEvent = $null
+    while ($Sync.SuccessQueue.TryDequeue([ref]$successEvent)) {
+        if ($chkSuccessBanner.Checked) { Show-SuccessBanner -Event $successEvent }
     }
 
     $lblState.Text = "State: $($Sync.State)"

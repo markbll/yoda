@@ -249,6 +249,7 @@ $EngineScriptBlock = {
     $MissingPartsFile = Join-Path -Path $LogFolder -ChildPath "missing_parts_log.txt"
     $FailedArchivesFile = Join-Path -Path $LogFolder -ChildPath "failed_archives_log.txt"
     $ErrorDetailsFile = Join-Path -Path $LogFolder -ChildPath "error_details_log.txt"
+    $CompletedLogFile = Join-Path -Path $LogFolder -ChildPath "completed_log.txt"
     $ErrorCount = 0
     $ProcessedArchives = @{}
     $ConsecutiveEmptyCycles = 0
@@ -332,6 +333,18 @@ $EngineScriptBlock = {
             Add-Content -Path $FailedArchivesFile -Value "[$Timestamp] ARCHIVE: $ArchiveName | REASON: $Reason" -Encoding UTF8 -ErrorAction Stop
             if ($Details) { Add-Content -Path $FailedArchivesFile -Value "    DETAILS: $Details" -Encoding UTF8 -ErrorAction Stop }
             Add-Content -Path $FailedArchivesFile -Value "" -Encoding UTF8 -ErrorAction Stop
+        } catch { }
+    }
+
+    # A dedicated, append-only record of every successful completion -
+    # separate from the main log so "what has finished, ever" doesn't
+    # require scrolling back through routine cycle noise, and survives
+    # past whatever the main log's 3000-line on-screen trim keeps.
+    function Write-CompletedLog {
+        param([string]$ArchiveName, [string]$Location, [int]$FileCount, [int]$PartCount)
+        $Timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+        try {
+            Add-Content -Path $CompletedLogFile -Value "[$Timestamp] $ArchiveName | $PartCount part(s) | $FileCount file(s) | $Location" -Encoding UTF8 -ErrorAction Stop
         } catch { }
     }
 
@@ -927,6 +940,7 @@ $EngineScriptBlock = {
                             # successful-completion alert.
                             try { foreach ($f in 523, 659, 784, 1046) { [Console]::Beep($f, 130) } } catch { }
                         }
+                        Write-CompletedLog -ArchiveName $BaseName -Location $FinalLocation -FileCount $ExtractedFileCount -PartCount $MovedPartCount
                         $Sync.SuccessQueue.Enqueue([PSCustomObject]@{
                             ArchiveName = $BaseName
                             Location    = $FinalLocation
@@ -1358,21 +1372,44 @@ $lblCountdown.Spring = $true
 $lblCountdown.TextAlign = [System.Drawing.ContentAlignment]::MiddleRight
 $statusStrip.Items.AddRange(@($lblState, $lblCycle, $lblCompleted, $lblWaiting, $lblFailed, $lblErrors, $lblStagerState, $lblStaged, $lblCountdown))
 
-# --- Log view ---
+# --- Log view - a tab for the full activity log, and a second tab that only
+# ever gets a line added on a successful completion, so "what's finished"
+# never requires scrolling back through routine cycle noise. ---
+$tabLog = New-Object System.Windows.Forms.TabControl
+$tabLog.Location = New-Object System.Drawing.Point(15, 510)
+$tabLog.Size = New-Object System.Drawing.Size(900, 300)
+$tabLog.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right
+
+$tabPageActivity = New-Object System.Windows.Forms.TabPage
+$tabPageActivity.Text = "Activity Log"
+
+$tabPageCompleted = New-Object System.Windows.Forms.TabPage
+$tabPageCompleted.Text = "Completed Archives"
+
 $rtbLog = New-Object System.Windows.Forms.RichTextBox
-$rtbLog.Location = New-Object System.Drawing.Point(15, 510)
-$rtbLog.Size = New-Object System.Drawing.Size(900, 300)
-$rtbLog.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right
+$rtbLog.Dock = [System.Windows.Forms.DockStyle]::Fill
 $rtbLog.ReadOnly = $true
 $rtbLog.BackColor = [System.Drawing.Color]::Black
 $rtbLog.ForeColor = [System.Drawing.Color]::Cyan
 $rtbLog.Font = New-Object System.Drawing.Font("Consolas", 9)
 $rtbLog.WordWrap = $true
 
+$rtbCompleted = New-Object System.Windows.Forms.RichTextBox
+$rtbCompleted.Dock = [System.Windows.Forms.DockStyle]::Fill
+$rtbCompleted.ReadOnly = $true
+$rtbCompleted.BackColor = [System.Drawing.Color]::Black
+$rtbCompleted.ForeColor = [System.Drawing.Color]::LightGreen
+$rtbCompleted.Font = New-Object System.Drawing.Font("Consolas", 9)
+$rtbCompleted.WordWrap = $true
+
+$tabPageActivity.Controls.Add($rtbLog)
+$tabPageCompleted.Controls.Add($rtbCompleted)
+$tabLog.TabPages.AddRange(@($tabPageActivity, $tabPageCompleted))
+
 $Form.Controls.AddRange(@(
     $grpPaths, $grpEngine,
     $btnStart, $btnStop, $btnOpenPreStage, $btnOpenInbound, $btnOpenExtracted, $btnOpenCompleted, $btnOpenLogs, $btnClearLog,
-    $rtbLog, $statusStrip
+    $tabLog, $statusStrip
 ))
 
 # ------------------------------------------------------------------------
@@ -1618,7 +1655,9 @@ $btnOpenLogs.Add_Click({
     else { [System.Windows.Forms.MessageBox]::Show("Logs folder does not exist yet.", "YODA") | Out-Null }
 })
 
-$btnClearLog.Add_Click({ $rtbLog.Clear() })
+$btnClearLog.Add_Click({
+    if ($tabLog.SelectedTab -eq $tabPageCompleted) { $rtbCompleted.Clear() } else { $rtbLog.Clear() }
+})
 
 $btnStart.Add_Click({
     if ($null -ne $script:EnginePS) { return }
@@ -1725,6 +1764,18 @@ $tmrPoll.Add_Tick({
     $successEvent = $null
     while ($Sync.SuccessQueue.TryDequeue([ref]$successEvent)) {
         if ($chkSuccessBanner.Checked) { Show-SuccessBanner -Event $successEvent }
+
+        $PartInfo = if ($successEvent.PartCount) { " ($($successEvent.PartCount) part(s))" } else { "" }
+        $line = "[$($successEvent.Timestamp.ToString('yyyy-MM-dd HH:mm:ss'))] $($successEvent.ArchiveName)$PartInfo - $($successEvent.FileCount) file(s) - $($successEvent.Location)"
+        $rtbCompleted.AppendText("$line`r`n")
+        $rtbCompleted.SelectionStart = $rtbCompleted.TextLength
+        $rtbCompleted.ScrollToCaret()
+        if ($rtbCompleted.Lines.Count -gt 3000) {
+            $keep = $rtbCompleted.Lines[-2000..-1] -join "`r`n"
+            $rtbCompleted.Text = $keep + "`r`n"
+            $rtbCompleted.SelectionStart = $rtbCompleted.TextLength
+            $rtbCompleted.ScrollToCaret()
+        }
     }
 
     $lblState.Text = "State: $($Sync.State)"

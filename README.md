@@ -109,9 +109,23 @@ checkbox is on) plays a short original completion chime, and (if **Show
 success banner popup** is checked, on by default) shows a green
 notification in the corner of the screen naming the archive, its final
 destination, and how many files were extracted. The banner is purely
-informational - it never blocks the engine or requires a click, and
-closes itself after a few seconds. Several archives finishing close
-together stack their banners rather than overlapping.
+informational - it never blocks the engine and stays on screen until
+you close it (a small X in the corner), so it's still there whenever
+you next look at the screen rather than flashing by. Several archives
+finishing close together stack their banners instead of overlapping;
+at most 8 stay open at once, oldest first, so a long unattended run
+can't pile up windows without bound.
+
+### Completed Archives log
+
+Below the main activity log, a second tab - **Completed Archives** -
+only ever gets a line added when an archive finishes successfully:
+its name, part and file counts, and final destination, so "what has
+finished" never means scrolling back through routine scan-cycle noise
+to find it. The same information is also written to
+`completed_log.txt` in the Logs folder as a permanent, append-only
+record, independent of what the GUI happens to have on screen or
+trimmed at the time.
 
 ### Requirements
 

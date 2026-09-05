@@ -42,8 +42,8 @@ console window, you get:
 ### Pre-Stage folder (optional)
 
 Some setups land files in one place first - a download client, an FTP/SFTP
-drop, a torrent client - before they should be handed to Yoda's own Inbound
-folder. Set a **Pre-Stage** path in the GUI and, whenever the engine is
+drop, some other transfer tool - before they should be handed to Yoda's own
+Inbound folder. Set a **Pre-Stage** path in the GUI and, whenever the engine is
 running, a second background thread watches it and moves qualifying files
 into Inbound automatically. Leave the field blank to disable this entirely
 (the default).

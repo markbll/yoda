@@ -256,6 +256,7 @@ $EngineScriptBlock = {
     $LastPartProgressAt = @{}
     $LastPartFingerprint = @{}
     $UnknownVolumeCountAlerted = @{}
+    $FallbackTestedFingerprint = @{}
     # This measures minutes of NO NEW PARTS ARRIVING, not minutes-incomplete -
     # a large archive can legitimately take hours to fully arrive, so alerting
     # on elapsed time alone would false-alarm on every normal slow transfer.
@@ -797,6 +798,7 @@ $EngineScriptBlock = {
                     $LastPartProgressAt = @{}
                     $LastPartFingerprint = @{}
                     $UnknownVolumeCountAlerted = @{}
+                    $FallbackTestedFingerprint = @{}
                 }
 
                 Wait-NextCycle $CheckIntervalSeconds
@@ -849,42 +851,72 @@ $EngineScriptBlock = {
                                 if ($Part.Name -match '\.(\d{3})$') { [void]$PresentNumbers.Add([int]$matches[1]) }
                             }
                             $Fingerprint = ($PresentNumbers | Sort-Object) -join ','
-                            if (-not $LastPartFingerprint.ContainsKey($BaseName) -or $LastPartFingerprint[$BaseName] -ne $Fingerprint) {
+                            $WasAlreadyStable = ($LastPartFingerprint.ContainsKey($BaseName) -and $LastPartFingerprint[$BaseName] -eq $Fingerprint)
+                            if (-not $WasAlreadyStable) {
                                 $LastPartFingerprint[$BaseName] = $Fingerprint
                                 $LastPartProgressAt[$BaseName] = Get-Date
                                 if ($UnknownVolumeCountAlerted.ContainsKey($BaseName)) { $UnknownVolumeCountAlerted.Remove($BaseName) }
                             }
-                            $StalledMinutes = ((Get-Date) - $LastPartProgressAt[$BaseName]).TotalMinutes
-                            if ($StalledMinutes -ge $StalledPartArrivalAlertMinutes -and -not $UnknownVolumeCountAlerted.ContainsKey($BaseName)) {
-                                $UnknownVolumeCountAlerted[$BaseName] = $true
-                                $StuckMsg = "STUCK: '$BaseName' has had NO new parts arrive for $([math]::Round($StalledMinutes, 1)) minute(s) and its total volume count still cannot be determined ($($PartFiles.Count) part(s) currently present in Inbound). If every part is genuinely present, the first volume (.001) may be corrupted; otherwise the transfer may have stopped. It will keep waiting indefinitely and will NOT be auto-failed - check manually if this persists."
-                                Write-Log $StuckMsg -Type "Error"
-                                Write-FailedArchiveLog $BaseName "Stuck - no new parts arriving" "No progress since $($LastPartProgressAt[$BaseName].ToString('yyyy-MM-dd HH:mm:ss')). $($PartFiles.Count) part(s) currently present in Inbound."
-                                if ($EnableThemeBeeps) { try { [Console]::Beep(300, 500) } catch { } }
-                            }
-                            # We don't know the true total yet, but we can still show gaps
-                            # within the range of part numbers seen so far - e.g. parts
-                            # 1-45 present but 012 and 030 missing - which is the useful,
-                            # common case (a large archive trickling in over time), unlike
-                            # Verify-AllPartsPresentAndStable's missing-part detection below,
-                            # which by construction only runs once every single part is
-                            # already present (see the comment above).
-                            $GapMsg = ""
-                            if ($PresentNumbers.Count -gt 0) {
-                                $HighestSeen = ($PresentNumbers | Measure-Object -Maximum).Maximum
-                                $GapsSoFar = @(1..($HighestSeen - 1) | Where-Object { -not $PresentNumbers.Contains($_) })
-                                if ($GapsSoFar.Count -gt 0) {
-                                    $GapMsg = " - have parts up to $($HighestSeen.ToString('000')) with gap(s) at: $(Format-PartNumberRanges -Numbers $GapsSoFar)"
-                                } else {
-                                    $GapMsg = " - have parts 001-$($HighestSeen.ToString('000')) with no gaps so far"
+
+                            # Fallback: 7-Zip's "Volumes = N" text is the normal way to learn
+                            # the expected count, but that's a text-parse of 7z's own output
+                            # and nothing guarantees its exact wording is stable across every
+                            # 7-Zip build/locale/version. If the part set has stopped changing
+                            # (same fingerprint as last cycle) and hasn't been probed yet at
+                            # this exact fingerprint, try a real integrity test directly - if
+                            # 7z can fully decompress and CRC-validate everything present
+                            # right now, that alone proves this set is complete, independent
+                            # of whether "Volumes=" was ever successfully parsed. Gated on
+                            # "already stable" so an actively-arriving archive (fingerprint
+                            # changing most cycles) never pays for a speculative test, and
+                            # deduped per fingerprint so a genuinely stuck/corrupt archive
+                            # isn't retested every cycle forever.
+                            if ($WasAlreadyStable -and $FallbackTestedFingerprint["$BaseName|$Fingerprint"] -ne $true) {
+                                $FallbackTestedFingerprint["$BaseName|$Fingerprint"] = $true
+                                Write-Log "Volume count still not reported by 7-Zip's listing, but part set has stopped changing - attempting a direct integrity test as a fallback completeness check: $BaseName" -Type "Info"
+                                if (Test-ArchiveIntegrity -FilePath $FirstPart.FullName) {
+                                    Write-Log "Fallback integrity test PASSED against the $($PartFiles.Count) part(s) currently present - treating as complete: $BaseName" -Type "Success"
+                                    $ExpectedCount = $PartFiles.Count
+                                    $LastPartProgressAt.Remove($BaseName)
+                                    $LastPartFingerprint.Remove($BaseName)
+                                    $UnknownVolumeCountAlerted.Remove($BaseName)
                                 }
                             }
-                            Write-Log "Cannot determine total volume count yet (needs every part present)$GapMsg - waiting for more parts: $BaseName" -Type "Warning"
-                            if (-not $ProcessedArchives.ContainsKey($BaseName)) { $ProcessedArchives[$BaseName] = "waiting" }
-                            continue
+                            if ($null -eq $ExpectedCount) {
+                                $StalledMinutes = ((Get-Date) - $LastPartProgressAt[$BaseName]).TotalMinutes
+                                if ($StalledMinutes -ge $StalledPartArrivalAlertMinutes -and -not $UnknownVolumeCountAlerted.ContainsKey($BaseName)) {
+                                    $UnknownVolumeCountAlerted[$BaseName] = $true
+                                    $StuckMsg = "STUCK: '$BaseName' has had NO new parts arrive for $([math]::Round($StalledMinutes, 1)) minute(s) and its total volume count still cannot be determined ($($PartFiles.Count) part(s) currently present in Inbound). If every part is genuinely present, the first volume (.001) may be corrupted; otherwise the transfer may have stopped. It will keep waiting indefinitely and will NOT be auto-failed - check manually if this persists."
+                                    Write-Log $StuckMsg -Type "Error"
+                                    Write-FailedArchiveLog $BaseName "Stuck - no new parts arriving" "No progress since $($LastPartProgressAt[$BaseName].ToString('yyyy-MM-dd HH:mm:ss')). $($PartFiles.Count) part(s) currently present in Inbound."
+                                    if ($EnableThemeBeeps) { try { [Console]::Beep(300, 500) } catch { } }
+                                }
+                                # We don't know the true total yet, but we can still show gaps
+                                # within the range of part numbers seen so far - e.g. parts
+                                # 1-45 present but 012 and 030 missing - which is the useful,
+                                # common case (a large archive trickling in over time), unlike
+                                # Verify-AllPartsPresentAndStable's missing-part detection below,
+                                # which by construction only runs once every single part is
+                                # already present (see the comment above).
+                                $GapMsg = ""
+                                if ($PresentNumbers.Count -gt 0) {
+                                    $HighestSeen = ($PresentNumbers | Measure-Object -Maximum).Maximum
+                                    $GapsSoFar = @(1..($HighestSeen - 1) | Where-Object { -not $PresentNumbers.Contains($_) })
+                                    if ($GapsSoFar.Count -gt 0) {
+                                        $GapMsg = " - have parts up to $($HighestSeen.ToString('000')) with gap(s) at: $(Format-PartNumberRanges -Numbers $GapsSoFar)"
+                                    } else {
+                                        $GapMsg = " - have parts 001-$($HighestSeen.ToString('000')) with no gaps so far"
+                                    }
+                                }
+                                Write-Log "Cannot determine total volume count yet (needs every part present)$GapMsg - waiting for more parts: $BaseName" -Type "Warning"
+                                if (-not $ProcessedArchives.ContainsKey($BaseName)) { $ProcessedArchives[$BaseName] = "waiting" }
+                                continue
+                            }
                         }
-                        $ExpectedCount = 1
-                        Write-Log "Single-part archive detected: $BaseName" -Type "Info"
+                        if ($null -eq $ExpectedCount) {
+                            $ExpectedCount = 1
+                            Write-Log "Single-part archive detected: $BaseName" -Type "Info"
+                        }
                     } else {
                         $LastPartProgressAt.Remove($BaseName)
                         $LastPartFingerprint.Remove($BaseName)

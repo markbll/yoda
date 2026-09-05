@@ -1438,14 +1438,27 @@ function Add-LogEntry {
 # Tracks how many success banners are currently on screen, so a burst of
 # completions (several archives finishing in the same cycle) stacks them
 # instead of piling up on top of each other.
-$script:OpenBannerCount = 0
+# Open banners, oldest first - lets a new one evict the oldest once the cap
+# is hit, and lets Stop-Engine (or the form closing) sweep all of them.
+$script:OpenBanners = [System.Collections.Generic.List[object]]::new()
+$script:MaxOpenBanners = 8
 
-# A non-modal, self-closing notification for a completed extraction. Never
-# uses ShowDialog()/MessageBox - this must not block the unattended engine
-# waiting for someone to click OK, so it just appears, stays a few seconds,
-# and closes itself.
+# A non-modal notification for a completed extraction. Never uses
+# ShowDialog()/MessageBox - this must not block the unattended engine
+# waiting for someone to click OK. It stays on screen until closed (the X
+# button, or Stop/exit) rather than timing out, since the whole point is to
+# still be visible whenever someone next looks at the screen - but the
+# count of simultaneously-open banners is capped so a long unattended run
+# processing many archives can never accumulate windows without bound; once
+# the cap is hit, the oldest banner is closed to make room for the newest.
 function Show-SuccessBanner {
     param($Event)
+
+    while ($script:OpenBanners.Count -ge $script:MaxOpenBanners) {
+        $oldest = $script:OpenBanners[0]
+        $script:OpenBanners.RemoveAt(0)
+        try { $oldest.Close(); $oldest.Dispose() } catch { }
+    }
 
     $banner = New-Object System.Windows.Forms.Form
     $banner.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::None
@@ -1457,7 +1470,7 @@ function Show-SuccessBanner {
 
     $workArea = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
     $x = $workArea.Right - $banner.Width - 20
-    $y = $workArea.Bottom - $banner.Height - 20 - ($script:OpenBannerCount * ($banner.Height + 12))
+    $y = $workArea.Bottom - $banner.Height - 20 - ($script:OpenBanners.Count * ($banner.Height + 12))
     $banner.Location = New-Object System.Drawing.Point($x, $y)
 
     $banner.Add_Paint({
@@ -1472,7 +1485,17 @@ function Show-SuccessBanner {
     $lblTitle.Font = New-Object System.Drawing.Font("Segoe UI", 13, [System.Drawing.FontStyle]::Bold)
     $lblTitle.ForeColor = [System.Drawing.Color]::White
     $lblTitle.Location = New-Object System.Drawing.Point(14, 10)
-    $lblTitle.Size = New-Object System.Drawing.Size(392, 28)
+    $lblTitle.Size = New-Object System.Drawing.Size(368, 28)
+
+    $btnClose = New-Object System.Windows.Forms.Label
+    $btnClose.Text = [char]0x2715
+    $btnClose.Font = New-Object System.Drawing.Font("Segoe UI", 11, [System.Drawing.FontStyle]::Bold)
+    $btnClose.ForeColor = [System.Drawing.Color]::White
+    $btnClose.Location = New-Object System.Drawing.Point(388, 8)
+    $btnClose.Size = New-Object System.Drawing.Size(24, 24)
+    $btnClose.Cursor = [System.Windows.Forms.Cursors]::Hand
+    $btnClose.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
+    $btnClose.Add_Click({ $banner.Close() }.GetNewClosure())
 
     $lblDetails = New-Object System.Windows.Forms.Label
     $PartInfo = if ($Event.PartCount) { " ($($Event.PartCount) part(s))" } else { "" }
@@ -1483,21 +1506,13 @@ function Show-SuccessBanner {
     $lblDetails.Size = New-Object System.Drawing.Size(392, 78)
     $lblDetails.AutoEllipsis = $true
 
-    $banner.Controls.AddRange(@($lblTitle, $lblDetails))
+    $banner.Controls.AddRange(@($lblTitle, $btnClose, $lblDetails))
 
-    $script:OpenBannerCount++
-    $closeTimer = New-Object System.Windows.Forms.Timer
-    $closeTimer.Interval = 7000
-    $closeTimer.Add_Tick({
-        $closeTimer.Stop()
-        $script:OpenBannerCount--
-        if ($script:OpenBannerCount -lt 0) { $script:OpenBannerCount = 0 }
-        $banner.Close()
-        $banner.Dispose()
+    $banner.Add_FormClosed({
+        [void]$script:OpenBanners.Remove($banner)
     }.GetNewClosure())
-    $banner.Add_FormClosed({ try { $closeTimer.Stop(); $closeTimer.Dispose() } catch { } }.GetNewClosure())
-    $closeTimer.Start()
 
+    $script:OpenBanners.Add($banner)
     $banner.Show()
 }
 
@@ -1755,6 +1770,8 @@ $Form.Add_FormClosing({
     if ($null -ne $script:EnginePS -or $null -ne $script:StagerPS) {
         Stop-Engine -WaitSeconds 5
     }
+    foreach ($b in @($script:OpenBanners)) { try { $b.Close(); $b.Dispose() } catch { } }
+    $script:OpenBanners.Clear()
     Save-CurrentConfig
 })
 

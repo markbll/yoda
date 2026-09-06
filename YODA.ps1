@@ -402,7 +402,7 @@ $EngineScriptBlock = {
     # this archive's part count and, worse, into its RAW move.
     function Get-PartBaseName {
         param([string]$FileName)
-        $BaseName = $FileName -replace '\.\d{3}$', ''
+        $BaseName = $FileName -replace '\.\d{3,}$', ''
         $BaseName = $BaseName -replace '\.zip$', ''
         $BaseName = $BaseName -replace '\.7z$', ''
         return $BaseName
@@ -412,7 +412,7 @@ $EngineScriptBlock = {
         param([string]$Path)
         try {
             $Files = @(Get-ChildItem -Path $Path -File -ErrorAction SilentlyContinue |
-                       Where-Object { $_.Extension -match '\.(7z|zip)' -or $_.Name -match '\.\d{3}$' })
+                       Where-Object { $_.Extension -match '\.(7z|zip)' -or $_.Name -match '\.\d{3,}$' })
             if ($Files.Count -eq 0) { return @{} }
             $Groups = @{}
             foreach ($File in $Files) {
@@ -501,7 +501,7 @@ $EngineScriptBlock = {
             # real "name.7z.NNN"-style file, which silently broke this before.
             $PresentNumbers = [System.Collections.Generic.HashSet[int]]::new()
             foreach ($Part in $PartFiles) {
-                if ($Part.Name -match '\.(\d{3})$') {
+                if ($Part.Name -match '\.(\d{3,})$') {
                     [void]$PresentNumbers.Add([int]$matches[1])
                 }
             }
@@ -552,14 +552,14 @@ $EngineScriptBlock = {
                 return $true
             } else {
                 Write-Log "Archive integrity test FAILED: $FileName (exit=$LASTEXITCODE, saysOk=$SaysOk, saysError=$SaysError)" -Type "Error"
-                $BaseName = $FileName -replace '\.\d{3}$', '' -replace '\.zip$', '' -replace '\.7z$', ''
+                $BaseName = $FileName -replace '\.\d{3,}$', '' -replace '\.zip$', '' -replace '\.7z$', ''
                 Write-FailedArchiveLog $BaseName "Integrity Test Failed" $OutputText
                 $script:ErrorCount++
                 return $false
             }
         } catch {
             Write-Log "Exception during integrity test: $_" -Type "Error"
-            $BaseName = $FileName -replace '\.\d{3}$', '' -replace '\.zip$', '' -replace '\.7z$', ''
+            $BaseName = $FileName -replace '\.\d{3,}$', '' -replace '\.zip$', '' -replace '\.7z$', ''
             Write-ErrorDetailsLog "Test-ArchiveIntegrity" $BaseName "Exception" $_
             $script:ErrorCount++
             return $false
@@ -570,7 +570,7 @@ $EngineScriptBlock = {
         param([string]$FirstPartPath, [string]$DestinationPath)
         try {
             $ArchiveName = Split-Path $FirstPartPath -Leaf
-            $ArchiveName = $ArchiveName -replace '\.\d{3}$', '' -replace '\.zip$', '' -replace '\.7z$', ''
+            $ArchiveName = $ArchiveName -replace '\.\d{3,}$', '' -replace '\.zip$', '' -replace '\.7z$', ''
             $Timestamp = Get-Date -Format "yyyy-MM-dd_HH-mm-ss"
             $FolderName = "$(ConvertTo-SafeFolderName $ArchiveName)`_$Timestamp"
             $FinalDestination = Join-Path -Path $DestinationPath -ChildPath $FolderName
@@ -831,7 +831,7 @@ $EngineScriptBlock = {
                     # against some other part standing in as "first" while
                     # .001 is still missing - just wait, regardless of how
                     # many other parts have already arrived.
-                    if ($FirstPart.Name -match '\.\d{3}$' -and -not ($PartFiles | Where-Object { $_.Name -match '\.001$' })) {
+                    if ($FirstPart.Name -match '\.\d{3,}$' -and -not ($PartFiles | Where-Object { $_.Name -match '\.001$' })) {
                         Write-Log "Waiting for .001 (arrives last) - $($PartFiles.Count) other part(s) already present: $BaseName" -Type "Warning"
                         if (-not $ProcessedArchives.ContainsKey($BaseName)) { $ProcessedArchives[$BaseName] = "waiting" }
                         continue
@@ -841,7 +841,7 @@ $EngineScriptBlock = {
 
                     $ExpectedCount = Get-ExpectedPartCount -FilePath $FirstPart.FullName
                     if ($null -eq $ExpectedCount) {
-                        if ($FirstPart.Name -match '\.\d{3}$') {
+                        if ($FirstPart.Name -match '\.\d{3,}$') {
                             # This IS a numbered split part, but 7-Zip could not report a
                             # volume count from it alone. For 7-Zip's raw volume-split
                             # format, the end-of-archive header (which is where "Volumes="
@@ -861,7 +861,7 @@ $EngineScriptBlock = {
                             # long stretch - a real stall, not just a slow transfer.
                             $PresentNumbers = [System.Collections.Generic.HashSet[int]]::new()
                             foreach ($Part in $PartFiles) {
-                                if ($Part.Name -match '\.(\d{3})$') { [void]$PresentNumbers.Add([int]$matches[1]) }
+                                if ($Part.Name -match '\.(\d{3,})$') { [void]$PresentNumbers.Add([int]$matches[1]) }
                             }
                             $Fingerprint = ($PresentNumbers | Sort-Object) -join ','
                             $WasAlreadyStable = ($LastPartFingerprint.ContainsKey($BaseName) -and $LastPartFingerprint[$BaseName] -eq $Fingerprint)
@@ -1111,7 +1111,7 @@ $StagerScriptBlock = {
         if ($File.Name.StartsWith('.')) { return $false }
         if ($File.Extension -ieq '.tmp') { return $false }
         if ($File.Extension -imatch '^\.(7z|zip)$') { return $true }
-        if ($File.Name -match '\.\d{3}$') { return $true }
+        if ($File.Name -match '\.\d{3,}$') { return $true }
         return $false
     }
 

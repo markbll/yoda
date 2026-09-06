@@ -824,6 +824,19 @@ $EngineScriptBlock = {
                     $PartFiles = $ArchiveGroups[$BaseName]
                     $FirstPart = $PartFiles | Sort-Object Name | Select-Object -First 1
 
+                    # .001 is the canonical entry point 7-Zip expects for a
+                    # numbered split archive - and by design it's the part sent
+                    # LAST, specifically so an incomplete set can never look
+                    # ready. Don't run any volume-count or integrity check
+                    # against some other part standing in as "first" while
+                    # .001 is still missing - just wait, regardless of how
+                    # many other parts have already arrived.
+                    if ($FirstPart.Name -match '\.\d{3}$' -and -not ($PartFiles | Where-Object { $_.Name -match '\.001$' })) {
+                        Write-Log "Waiting for .001 (arrives last) - $($PartFiles.Count) other part(s) already present: $BaseName" -Type "Warning"
+                        if (-not $ProcessedArchives.ContainsKey($BaseName)) { $ProcessedArchives[$BaseName] = "waiting" }
+                        continue
+                    }
+
                     Write-Log "Processing: $BaseName ($($PartFiles.Count) parts found)" -Type "Info"
 
                     $ExpectedCount = Get-ExpectedPartCount -FilePath $FirstPart.FullName
@@ -1060,30 +1073,37 @@ $StagerScriptBlock = {
         } catch { return $false }
     }
 
-    function Get-StagerFileSize {
-        param([string]$FilePath)
-        try { return (Get-Item -Path $FilePath -ErrorAction Stop).Length } catch { return -1 }
-    }
-
     # Before moving a file, confirm the write has actually finished: the file
-    # must be unlocked and its size must not change across a full
-    # confirmation window (fixed at 10 seconds), not just at a single instant.
-    function Wait-StagerFileSettled {
-        param([string]$FilePath, [int]$ConfirmSeconds = 10)
+    # must be unlocked and its size must not have changed for a full 10
+    # seconds, not just at a single instant. This used to be a blocking
+    # Start-Sleep loop run per file, one at a time - fine for one file, but
+    # with a batch of many arriving together it meant 10 full seconds of the
+    # whole thread doing nothing else, per file, back to back, before even
+    # looking at the next one (a batch of 20 files could take 200+ seconds
+    # just in these waits, on top of the scan interval). Instead, remember
+    # each candidate's size and when it was first seen at that size, and
+    # compare across scan cycles - checking every candidate on every cycle
+    # costs nothing (no sleeping), and a file only actually needs to be
+    # *seen* stable across roughly one scan interval, however many other
+    # files are also waiting, rather than blocking 10 seconds per file.
+    $StagerFileState = @{}
 
-        if (-not (Test-StagerFileStability -FilePath $FilePath)) { return $false }
-        $sizeBefore = Get-StagerFileSize -FilePath $FilePath
+    function Test-StagerFileSettled {
+        param([System.IO.FileInfo]$File, [int]$ConfirmSeconds = 10)
 
-        for ($i = 0; $i -lt $ConfirmSeconds; $i++) {
-            if ($Sync.StopRequested) { return $false }
-            Start-Sleep -Seconds 1
+        if (-not (Test-StagerFileStability -FilePath $File.FullName)) {
+            $StagerFileState.Remove($File.FullName)
+            return $false
         }
 
-        if (-not (Test-Path $FilePath)) { return $false }
-        if (-not (Test-StagerFileStability -FilePath $FilePath)) { return $false }
-        $sizeAfter = Get-StagerFileSize -FilePath $FilePath
+        $CurrentSize = $File.Length
+        if (-not $StagerFileState.ContainsKey($File.FullName) -or $StagerFileState[$File.FullName].Size -ne $CurrentSize) {
+            $StagerFileState[$File.FullName] = [PSCustomObject]@{ Size = $CurrentSize; FirstSeenAt = Get-Date }
+            return $false
+        }
 
-        return ($sizeAfter -ge 0 -and $sizeAfter -eq $sizeBefore)
+        $Elapsed = ((Get-Date) - $StagerFileState[$File.FullName].FirstSeenAt).TotalSeconds
+        return ($Elapsed -ge $ConfirmSeconds)
     }
 
     function Test-QualifiesForStaging {
@@ -1134,17 +1154,26 @@ $StagerScriptBlock = {
                         continue
                     }
 
-                    if (-not (Wait-StagerFileSettled -FilePath $File.FullName -ConfirmSeconds 10)) {
+                    if (-not (Test-StagerFileSettled -File $File -ConfirmSeconds 10)) {
                         Write-StagerLog "Write not yet confirmed complete, will recheck: $($File.Name)" -Type "Info"
                         continue
                     }
 
                     Move-Item -Path $File.FullName -Destination $Destination -ErrorAction Stop
+                    $StagerFileState.Remove($File.FullName)
                     $Sync.Staged++
                     Write-StagerLog "Staged into inbound: $($File.Name)" -Type "Success"
                 } catch {
                     Write-StagerLog "Failed to stage $($File.Name): $_" -Type "Error"
                 }
+            }
+
+            # Forget tracking for anything no longer a candidate (moved,
+            # deleted, or no longer qualifying) so this can't grow unbounded
+            # across a long-running unattended session.
+            $CandidatePaths = [System.Collections.Generic.HashSet[string]]::new([string[]]@($Candidates.FullName))
+            foreach ($key in @($StagerFileState.Keys)) {
+                if (-not $CandidatePaths.Contains($key)) { $StagerFileState.Remove($key) }
             }
         } catch {
             Write-StagerLog "Exception scanning pre-stage folder: $_" -Type "Error"

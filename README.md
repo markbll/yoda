@@ -136,7 +136,14 @@ trimmed at the time.
 
 ### Run it
 
-Double-click **`Start_YODA.bat`**, or run directly:
+First time only: double-click **`Set-YodaPermissions.bat`**. Files extracted from a
+downloaded zip are flagged by Windows as coming from another computer, and
+PowerShell's default execution policy on most machines refuses to run an
+unsigned `.ps1` at all - this clears both blockers for the current user only
+(no administrator rights needed, and nothing outside your own account is
+touched). Safe to run again any time; it does nothing if already applied.
+
+Then double-click **`Start_YODA.bat`**, or run directly:
 
 ```powershell
 powershell.exe -ExecutionPolicy Bypass -File YODA.ps1

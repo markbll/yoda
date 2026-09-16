@@ -39,43 +39,50 @@ function Show-SplashScreen {
     param([int]$DurationSeconds = 5)
 
     $SplashArt = @'
-      YO
-       DAYO
-       DAYODA
-        YODAYOD
-        AYODAYODA
-         YODAYODAYO
-          DAYODAYODAY                 ODAYODAYODAYODA
-           YODAYODAYOD            AYODAYODAYODAYODAYODAY
-            ODAYODAYODAY        ODAYODAYODAYODAYODAYODAYODA
-             YODAYODAYODAY    ODAYODAYODAYODAYODAYODAYODAYODA
-              YODAYODAYODAYO DAYODAYODAYODAYODAYODAYODAYODAYOD
-               AYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYOD
-                 AYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAY
-                   ODAYODAYODAYODAYODAYODAYODAYOD    AYODAYODAYO
-                     DAYODAYODAYODAYODAYODAYODAYO    DAYODAYODAY
-                       ODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYOD
-                         AYODAYODAYODAYODAYODAYODAYODAYODAYODAYODA
-                           YODAYODAYODAYODAYODAYODAYODAYODAYODAYOD
-                             AYODAYODAYODAYODAYODAYODAYODAYODAYOD
-                               AYODAYODAYODAYODAYODAYODAYODA
-                                YODAYODAYODAYODAYODAYODAYO
-                                   DAYODAYODAYODAYODAYO
-                                        DAYODAYODAY
-                                           ODAYO
-                                           DAYOD
-                              AYODAYODAYODAYODAYODAYODAYODAYO
-                            DAYODAYODAYODAYODAYODAYODAYODAYODA
-                           YODAYODAYODAYODAYODAYODAYODAYODAYODAY
-                         ODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYO
-                        DAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODA
-                         YODAYODAYODAYODAYODAYODAYODAYODAYODAYODAY
-                         ODAYODAYODAYODAYODAYODAYODAYODAYODAYODAY
-                          ODAYODAYODAYODAYODAYODAYODAYODAYODAYODA
-                          YODAYODAYODAYODAYODAYODAYODAYODAYODAYOD
-                        AYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAY
-                          ODAYODAYODAYODAYODAYODAYODAYODAYODAYOD
-                                          AYODAYO
+        YODA
+        YODAYO
+         DAYODAY
+         ODAYODAY
+          ODAYODAYO
+          DAYODAYODAY
+           ODAYODAYODAY
+            ODAYODAYODAYO                      DAYODAYODAYODAYOD
+             AYODAYODAYODAY                ODAYODAYODAYODAYODAYODAYO
+              DAYODAYODAYODAY           ODAYODAYODAYODAYODAYODAYODAYODA
+               YODAYODAYODAYODA       YODAYODAYODAYODAYODAYODAYODAYODAYOD
+                AYODAYODAYODAYOD    AYODAYODAYODAYODAYODAYODAYODAYODAYODAYO
+                 DAYODAYODAYODAYOD AYODAYODAYODAYODAYODAYODAYODAYODAYODAYODA
+                  YODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYOD
+                    AYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAY
+                      ODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAY
+                        ODAYODAYODAYODAYODAYODAYODAYODAYODA      YODAYODAYODAY
+                          ODAYODAYODAYODAYODAYODAYODAYODAYOD    AYODAYODAYODAYO
+                            DAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYO
+                               DAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYOD
+                                 AYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYOD
+                                   AYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODA
+                                    YODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYOD
+                                      AYODAYODAYODAYODAYODAYODAYODAYODAYO
+                                        DAYODAYODAYODAYODAYODAYODAYODAY
+                                          ODAYODAYODAYODAYODAYODAYODA
+                                              YODAYODAYODAYODAYOD
+                                                    AYODAYO
+                                                    DAYODAY
+                                                    ODAYODA
+                                     YODAYODAYODAYODAYODAYODAYODAYODAYODAY
+                                    ODAYODAYODAYODAYODAYODAYODAYODAYODAYODAY
+                                  ODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODA
+                                YODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYOD
+                               AYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAY
+                              ODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODA
+                              YODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYOD
+                               AYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODA
+                               YODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAY
+                                ODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODA
+                                YODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYOD
+                              AYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYO
+                               DAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYOD
+                                      AYODAYODAYODAYODAYODAYODAYODAYODAYO
 '@
 
     $splash = New-Object System.Windows.Forms.Form
@@ -274,43 +281,50 @@ $EngineScriptBlock = {
     }
 
     $YodaArt = @'
-      YO
-       DAYO
-       DAYODA
-        YODAYOD
-        AYODAYODA
-         YODAYODAYO
-          DAYODAYODAY                 ODAYODAYODAYODA
-           YODAYODAYOD            AYODAYODAYODAYODAYODAY
-            ODAYODAYODAY        ODAYODAYODAYODAYODAYODAYODA
-             YODAYODAYODAY    ODAYODAYODAYODAYODAYODAYODAYODA
-              YODAYODAYODAYO DAYODAYODAYODAYODAYODAYODAYODAYOD
-               AYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYOD
-                 AYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAY
-                   ODAYODAYODAYODAYODAYODAYODAYOD    AYODAYODAYO
-                     DAYODAYODAYODAYODAYODAYODAYO    DAYODAYODAY
-                       ODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYOD
-                         AYODAYODAYODAYODAYODAYODAYODAYODAYODAYODA
-                           YODAYODAYODAYODAYODAYODAYODAYODAYODAYOD
-                             AYODAYODAYODAYODAYODAYODAYODAYODAYOD
-                               AYODAYODAYODAYODAYODAYODAYODA
-                                YODAYODAYODAYODAYODAYODAYO
-                                   DAYODAYODAYODAYODAYO
-                                        DAYODAYODAY
-                                           ODAYO
-                                           DAYOD
-                              AYODAYODAYODAYODAYODAYODAYODAYO
-                            DAYODAYODAYODAYODAYODAYODAYODAYODA
-                           YODAYODAYODAYODAYODAYODAYODAYODAYODAY
-                         ODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYO
-                        DAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODA
-                         YODAYODAYODAYODAYODAYODAYODAYODAYODAYODAY
-                         ODAYODAYODAYODAYODAYODAYODAYODAYODAYODAY
-                          ODAYODAYODAYODAYODAYODAYODAYODAYODAYODA
-                          YODAYODAYODAYODAYODAYODAYODAYODAYODAYOD
-                        AYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAY
-                          ODAYODAYODAYODAYODAYODAYODAYODAYODAYOD
-                                          AYODAYO
+        YODA
+        YODAYO
+         DAYODAY
+         ODAYODAY
+          ODAYODAYO
+          DAYODAYODAY
+           ODAYODAYODAY
+            ODAYODAYODAYO                      DAYODAYODAYODAYOD
+             AYODAYODAYODAY                ODAYODAYODAYODAYODAYODAYO
+              DAYODAYODAYODAY           ODAYODAYODAYODAYODAYODAYODAYODA
+               YODAYODAYODAYODA       YODAYODAYODAYODAYODAYODAYODAYODAYOD
+                AYODAYODAYODAYOD    AYODAYODAYODAYODAYODAYODAYODAYODAYODAYO
+                 DAYODAYODAYODAYOD AYODAYODAYODAYODAYODAYODAYODAYODAYODAYODA
+                  YODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYOD
+                    AYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAY
+                      ODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAY
+                        ODAYODAYODAYODAYODAYODAYODAYODAYODA      YODAYODAYODAY
+                          ODAYODAYODAYODAYODAYODAYODAYODAYOD    AYODAYODAYODAYO
+                            DAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYO
+                               DAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYOD
+                                 AYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYOD
+                                   AYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODA
+                                    YODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYOD
+                                      AYODAYODAYODAYODAYODAYODAYODAYODAYO
+                                        DAYODAYODAYODAYODAYODAYODAYODAY
+                                          ODAYODAYODAYODAYODAYODAYODA
+                                              YODAYODAYODAYODAYOD
+                                                    AYODAYO
+                                                    DAYODAY
+                                                    ODAYODA
+                                     YODAYODAYODAYODAYODAYODAYODAYODAYODAY
+                                    ODAYODAYODAYODAYODAYODAYODAYODAYODAYODAY
+                                  ODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODA
+                                YODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYOD
+                               AYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAY
+                              ODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODA
+                              YODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYOD
+                               AYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODA
+                               YODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAY
+                                ODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODA
+                                YODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYOD
+                              AYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYO
+                               DAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYOD
+                                      AYODAYODAYODAYODAYODAYODAYODAYODAYO
 '@
 
     function Write-Log {
@@ -745,10 +759,11 @@ $EngineScriptBlock = {
 
     if ($EnableStarWarsTheme -and $EnableThemeBeeps) {
         try {
-            # An original, generic "power-up" tone - not any specific melody -
+            # An original, generic "power-up" run - not any specific melody -
             # for the themed startup chime.
             $Notes = @(
-                @{F = 330; D = 120}, @{F = 392; D = 120}, @{F = 494; D = 120}, @{F = 587; D = 260}
+                @{F = 262; D = 100}, @{F = 330; D = 100}, @{F = 392; D = 100}, @{F = 440; D = 100},
+                @{F = 494; D = 100}, @{F = 587; D = 100}, @{F = 659; D = 260}
             )
             foreach ($Note in $Notes) { [Console]::Beep($Note.F, $Note.D) }
         } catch { }
@@ -791,7 +806,7 @@ $EngineScriptBlock = {
 
                 if ($ConsecutiveEmptyCycles -ge $EmptyCyclesBeforeRestart) {
                     Write-Log "Self-healing reset triggered after $EmptyCyclesBeforeRestart empty cycles." -Type "Warning"
-                    if ($EnableThemeBeeps) { try { [Console]::Beep(400, 300) } catch { } }
+                    if ($EnableThemeBeeps) { try { [Console]::Beep(440, 140); [Console]::Beep(349, 220) } catch { } }
                     $ProcessedArchives = @{}
                     $ErrorCount = 0
                     $ConsecutiveEmptyCycles = 0
@@ -902,7 +917,7 @@ $EngineScriptBlock = {
                                     $StuckMsg = "STUCK: '$BaseName' has had NO new parts arrive for $([math]::Round($StalledMinutes, 1)) minute(s) and its total volume count still cannot be determined ($($PartFiles.Count) part(s) currently present in Inbound). If every part is genuinely present, the first volume (.001) may be corrupted; otherwise the transfer may have stopped. It will keep waiting indefinitely and will NOT be auto-failed - check manually if this persists."
                                     Write-Log $StuckMsg -Type "Error"
                                     Write-FailedArchiveLog $BaseName "Stuck - no new parts arriving" "No progress since $($LastPartProgressAt[$BaseName].ToString('yyyy-MM-dd HH:mm:ss')). $($PartFiles.Count) part(s) currently present in Inbound."
-                                    if ($EnableThemeBeeps) { try { [Console]::Beep(300, 500) } catch { } }
+                                    if ($EnableThemeBeeps) { try { [Console]::Beep(300, 180); [Console]::Beep(250, 180); [Console]::Beep(300, 180); [Console]::Beep(250, 260) } catch { } }
                                 }
                                 # We don't know the true total yet, but we can still show gaps
                                 # within the range of part numbers seen so far - e.g. parts
@@ -981,9 +996,10 @@ $EngineScriptBlock = {
                         $ProcessedArchives[$BaseName] = "completed"
                         $ProcessedThisCycle++
                         if ($EnableThemeBeeps) {
-                            # Original ascending chime - not any specific melody - for a
-                            # successful-completion alert.
-                            try { foreach ($f in 523, 659, 784, 1046) { [Console]::Beep($f, 130) } } catch { }
+                            # Original ascending arpeggio with a little flourish at the
+                            # end - not any specific melody - for a successful-completion
+                            # alert.
+                            try { foreach ($f in 523, 659, 784, 1046, 784, 1046) { [Console]::Beep($f, 110) } } catch { }
                         }
                         Write-CompletedLog -ArchiveName $BaseName -Location $FinalLocation -FileCount $ExtractedFileCount -PartCount $MovedPartCount
                         $Sync.SuccessQueue.Enqueue([PSCustomObject]@{
@@ -997,7 +1013,7 @@ $EngineScriptBlock = {
                     } else {
                         $ProcessedArchives[$BaseName] = "extraction_failed"
                         Write-Log "Extraction failed for: $BaseName" -Type "Error"
-                        if ($EnableThemeBeeps) { try { [Console]::Beep(300, 300) } catch { } }
+                        if ($EnableThemeBeeps) { try { [Console]::Beep(400, 160); [Console]::Beep(300, 280) } catch { } }
                     }
                 } catch {
                     Write-Log "Exception processing $BaseName : $_" -Type "Error"

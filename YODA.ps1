@@ -39,50 +39,33 @@ function Show-SplashScreen {
     param([int]$DurationSeconds = 5)
 
     $SplashArt = @'
-        YODA
-        YODAYO
-         DAYODAY
-         ODAYODAY
-          ODAYODAYO
-          DAYODAYODAY
-           ODAYODAYODAY
-            ODAYODAYODAYO                      DAYODAYODAYODAYOD
-             AYODAYODAYODAY                ODAYODAYODAYODAYODAYODAYO
-              DAYODAYODAYODAY           ODAYODAYODAYODAYODAYODAYODAYODA
-               YODAYODAYODAYODA       YODAYODAYODAYODAYODAYODAYODAYODAYOD
-                AYODAYODAYODAYOD    AYODAYODAYODAYODAYODAYODAYODAYODAYODAYO
-                 DAYODAYODAYODAYOD AYODAYODAYODAYODAYODAYODAYODAYODAYODAYODA
-                  YODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYOD
-                    AYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAY
-                      ODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAY
-                        ODAYODAYODAYODAYODAYODAYODAYODAYODA      YODAYODAYODAY
-                          ODAYODAYODAYODAYODAYODAYODAYODAYOD    AYODAYODAYODAYO
-                            DAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYO
-                               DAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYOD
-                                 AYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYOD
-                                   AYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODA
-                                    YODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYOD
-                                      AYODAYODAYODAYODAYODAYODAYODAYODAYO
-                                        DAYODAYODAYODAYODAYODAYODAYODAY
-                                          ODAYODAYODAYODAYODAYODAYODA
-                                              YODAYODAYODAYODAYOD
-                                                    AYODAYO
-                                                    DAYODAY
-                                                    ODAYODA
-                                     YODAYODAYODAYODAYODAYODAYODAYODAYODAY
-                                    ODAYODAYODAYODAYODAYODAYODAYODAYODAYODAY
-                                  ODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODA
-                                YODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYOD
-                               AYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAY
-                              ODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODA
-                              YODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYOD
-                               AYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODA
-                               YODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAY
-                                ODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODA
-                                YODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYOD
-                              AYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYO
-                               DAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYOD
-                                      AYODAYODAYODAYODAYODAYODAYODAYODAYO
+                       .--""--.
+                    ,-'        '-,
+                  ,'   .-""-.     `,
+                 /   ,'  ..  `,     \
+                |   ( .'(  )'. )     |
+                 \   `-.,--,.-'     /
+                  `-,    ||    ,-'
+                     `-. || .-'
+                    ,-' .||.  `-,
+                  ,'   /.||.\    `,
+                ,'    / .||. \     `,
+               /     /  .||.  \      \
+              |    ,'   .||.   `,     |
+              |  ,'     .||.     `,   |
+             ,' ,'      .||.      `, `,
+            /  /        .||.        \  \
+           / ,'         .||.         `, \
+          |,'           .||.           `,|
+          /'      ,--.  .||.  ,--.      `\
+         / \     ,'    ``||''    `,     / \
+        /   `-. /        ||        \ ,-'   \
+       |       X         ||         X       |
+       |      / \         ||        / \      |
+        \    /   `,       ||      ,'   \    /
+         `--'      `-.    ||   ,-'      `--'
+                       `-.||,-'
+                          ""
 '@
 
     $splash = New-Object System.Windows.Forms.Form
@@ -110,7 +93,7 @@ function Show-SplashScreen {
 
     $lblArt = New-Object System.Windows.Forms.Label
     $lblArt.Text = $SplashArt
-    $lblArt.Font = New-Object System.Drawing.Font("Consolas", 12)
+    $lblArt.Font = New-Object System.Drawing.Font("Consolas", 16)
     $lblArt.ForeColor = [System.Drawing.Color]::FromArgb(120, 220, 90)
     $lblArt.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
     $lblArt.Location = New-Object System.Drawing.Point(0, 80)
@@ -281,50 +264,12 @@ $EngineScriptBlock = {
     }
 
     $YodaArt = @'
-        YODA
-        YODAYO
-         DAYODAY
-         ODAYODAY
-          ODAYODAYO
-          DAYODAYODAY
-           ODAYODAYODAY
-            ODAYODAYODAYO                      DAYODAYODAYODAYOD
-             AYODAYODAYODAY                ODAYODAYODAYODAYODAYODAYO
-              DAYODAYODAYODAY           ODAYODAYODAYODAYODAYODAYODAYODA
-               YODAYODAYODAYODA       YODAYODAYODAYODAYODAYODAYODAYODAYOD
-                AYODAYODAYODAYOD    AYODAYODAYODAYODAYODAYODAYODAYODAYODAYO
-                 DAYODAYODAYODAYOD AYODAYODAYODAYODAYODAYODAYODAYODAYODAYODA
-                  YODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYOD
-                    AYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAY
-                      ODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAY
-                        ODAYODAYODAYODAYODAYODAYODAYODAYODA      YODAYODAYODAY
-                          ODAYODAYODAYODAYODAYODAYODAYODAYOD    AYODAYODAYODAYO
-                            DAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYO
-                               DAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYOD
-                                 AYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYOD
-                                   AYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODA
-                                    YODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYOD
-                                      AYODAYODAYODAYODAYODAYODAYODAYODAYO
-                                        DAYODAYODAYODAYODAYODAYODAYODAY
-                                          ODAYODAYODAYODAYODAYODAYODA
-                                              YODAYODAYODAYODAYOD
-                                                    AYODAYO
-                                                    DAYODAY
-                                                    ODAYODA
-                                     YODAYODAYODAYODAYODAYODAYODAYODAYODAY
-                                    ODAYODAYODAYODAYODAYODAYODAYODAYODAYODAY
-                                  ODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODA
-                                YODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYOD
-                               AYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAY
-                              ODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODA
-                              YODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYOD
-                               AYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODA
-                               YODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAY
-                                ODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODA
-                                YODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYOD
-                              AYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYO
-                               DAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYODAYOD
-                                      AYODAYODAYODAYODAYODAYODAYODAYODAYO
+                 _
+ _   _  ___   __| | __ _
+| | | |/ _ \ / _` |/ _` |
+| |_| | (_) | (_| | (_| |
+ \__, |\___/ \__,_|\__,_|
+ |___/
 '@
 
     function Write-Log {

@@ -1609,7 +1609,7 @@ function Show-SuccessBanner {
     $btnClose.Size = New-Object System.Drawing.Size(24, 24)
     $btnClose.Cursor = [System.Windows.Forms.Cursors]::Hand
     $btnClose.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
-    $btnClose.Add_Click({ $banner.Close() }.GetNewClosure())
+    $btnClose.Add_Click({ try { $banner.Close() } catch { } }.GetNewClosure())
 
     $lblDetails = New-Object System.Windows.Forms.Label
     $PartInfo = if ($Event.PartCount) { " ($($Event.PartCount) part(s))" } else { "" }
@@ -1622,8 +1622,14 @@ function Show-SuccessBanner {
 
     $banner.Controls.AddRange(@($lblTitle, $btnClose, $lblDetails))
 
+    # WinForms event handlers run outside PowerShell's normal call stack (they're
+    # dispatched from the OS message loop), so an exception here would bypass any
+    # try/catch in the caller entirely and crash the whole app with a raw .NET
+    # error dialog instead of being handled gracefully - always self-contain.
     $banner.Add_FormClosed({
-        [void]$script:OpenBanners.Remove($banner)
+        try {
+            if ($null -ne $script:OpenBanners) { [void]$script:OpenBanners.Remove($banner) }
+        } catch { }
     }.GetNewClosure())
 
     $script:OpenBanners.Add($banner)
@@ -1830,6 +1836,10 @@ $btnStop.Add_Click({
 $tmrPoll = New-Object System.Windows.Forms.Timer
 $tmrPoll.Interval = 250
 $tmrPoll.Add_Tick({
+  # Timer.Tick, like FormClosing, is dispatched from the OS message loop -
+  # an uncaught exception anywhere below would crash the whole app with a
+  # raw .NET error dialog rather than just failing this one tick.
+  try {
     $dummy = $null
     $drained = 0
     while ($Sync.LogQueue.TryDequeue([ref]$dummy)) {
@@ -1890,17 +1900,24 @@ $tmrPoll.Add_Tick({
         $btnStop.Enabled = $false
         Set-InputsEnabled -Enabled $true
     }
+  } catch { }
 })
 $tmrPoll.Start()
 
 $Form.Add_FormClosing({
-    $tmrPoll.Stop()
-    if ($null -ne $script:EnginePS -or $null -ne $script:StagerPS) {
-        Stop-Engine -WaitSeconds 5
-    }
-    foreach ($b in @($script:OpenBanners)) { try { $b.Close(); $b.Dispose() } catch { } }
-    $script:OpenBanners.Clear()
-    Save-CurrentConfig
+    # This runs outside PowerShell's normal call stack (dispatched from the OS
+    # message loop via WmClose), so an uncaught exception here doesn't just fail
+    # silently or get caught upstream - it crashes the whole app with a raw .NET
+    # error dialog. Never let anything escape this handler.
+    try {
+        $tmrPoll.Stop()
+        if ($null -ne $script:EnginePS -or $null -ne $script:StagerPS) {
+            Stop-Engine -WaitSeconds 5
+        }
+        foreach ($b in @($script:OpenBanners)) { try { $b.Close(); $b.Dispose() } catch { } }
+        $script:OpenBanners.Clear()
+        Save-CurrentConfig
+    } catch { }
 })
 
 [void]$Form.ShowDialog()

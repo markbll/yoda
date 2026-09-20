@@ -1527,7 +1527,13 @@ function Show-SuccessBanner {
     $banner.ShowInTaskbar = $false
     $banner.TopMost = $true
 
-    $workArea = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
+    # On a locked workstation or a disconnected RDP session, PrimaryScreen can
+    # come back $null - fall back to a sane default rather than throwing and
+    # losing this banner (and, since a failure here used to propagate all the
+    # way out to the polling timer's tick, silently delaying unrelated work
+    # like the Completed Archives log line and Start/Stop button state too).
+    $primaryScreen = [System.Windows.Forms.Screen]::PrimaryScreen
+    $workArea = if ($null -ne $primaryScreen) { $primaryScreen.WorkingArea } else { New-Object System.Drawing.Rectangle(0, 0, 1024, 768) }
     $x = $workArea.Right - $banner.Width - 20
     $y = $workArea.Bottom - $banner.Height - 20 - ($script:OpenBanners.Count * ($banner.Height + 12))
     $banner.Location = New-Object System.Drawing.Point($x, $y)
@@ -1795,7 +1801,15 @@ $tmrPoll.Add_Tick({
 
     $successEvent = $null
     while ($Sync.SuccessQueue.TryDequeue([ref]$successEvent)) {
-        if ($chkSuccessBanner.Checked) { Show-SuccessBanner -Event $successEvent }
+        # Isolated on purpose: a burst of many completions in a row (or a
+        # single banner failing, e.g. PrimaryScreen unavailable on a locked
+        # session) must never skip this event's Completed Archives log line,
+        # nor abort the remaining queued events, nor - since this all runs
+        # inside the timer tick's single outer try/catch - block the label
+        # refresh and engine/stager cleanup that runs later in the same tick.
+        if ($chkSuccessBanner.Checked) {
+            try { Show-SuccessBanner -Event $successEvent } catch { }
+        }
 
         $PartInfo = if ($successEvent.PartCount) { " ($($successEvent.PartCount) part(s))" } else { "" }
         $line = "[$($successEvent.Timestamp.ToString('yyyy-MM-dd HH:mm:ss'))] $($successEvent.ArchiveName)$PartInfo - $($successEvent.FileCount) file(s) - $($successEvent.Location)"
